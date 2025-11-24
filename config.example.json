@@ -1,0 +1,16 @@
+{
+  "wifi": {
+    "ssid": "your_wifi_ssid",
+    "password": "your_wifi_password",
+    "hostname": "ESP32-Sensor"
+  },
+  "mqtt": {
+    "broker": "your.mqtt.broker",
+    "port": 8883,
+    "user": "esp32",
+    "password": "your-mqtt-password",
+    "device_id": "ESP32-Sensor",
+    "base_topic_root": "sensors/esp32"
+  }
+}
+

@@ -4,6 +4,7 @@ import dht, ssd1306
 import sys
 from resources import get_cpu_usage, get_full_memory_info
 from boot_globals import wifi, client, DEVICE_ID, TOPIC_TELE, mqtt_connect
+from detectors import ZScoreDetector, EWMADetector, AdaptiveThresholdDetector
 
 # setup dht22 and oled Display
 dht22 = dht.DHT22(Pin(25, Pin.IN))
@@ -38,7 +39,7 @@ def safe_shutdown():
     print("Device can now be powered off safely.")
 
 # sd logger
-def log_to_sd(ts, temp, hum, cpu, mem):
+def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
     """
     Logs a single measurement to daily CSV file on SD card.
     Creates a new file each day with header row if it doesn't exist.
@@ -58,10 +59,10 @@ def log_to_sd(ts, temp, hum, cpu, mem):
         # header if file is new
         if filename not in os.listdir("/sd"):
             with open(filepath, "w") as f:
-                f.write("ts,temp,hum,mp_cpu,mp_used_kb,mp_free_kb\n")
+                f.write("ts,temp,hum,mp_cpu,mp_used_kb,mp_free_kb,temp_zscore_anomaly,temp_ewma_anomaly,temp_adaptive_threshold_anomaly,hum_zscore_anomaly,hum_ewma_anomaly,hum_adaptive_threshold_anomaly\n")
 
         # timestamp line
-        line = f"{ts},{temp:.1f},{hum:.1f},{cpu['mp_task']:.1f},{mem['mp_used_kb']},{mem['mp_free_kb']}"
+        line = f"{ts},{temp:.1f},{hum:.1f},{cpu['mp_task']:.1f},{mem['mp_used_kb']},{mem['mp_free_kb']},{anomalies['temp_zscore_anomaly']},{anomalies['temp_ewma_anomaly']},{anomalies['temp_adaptive_threshold_anomaly']},{anomalies['hum_zscore_anomaly']},{anomalies['hum_ewma_anomaly']},{anomalies['hum_adaptive_threshold_anomaly']}"
 
         # append new row
         with open(filepath, "a") as f:
@@ -75,6 +76,17 @@ def log_to_sd(ts, temp, hum, cpu, mem):
 last_read = 0
 debug=True
 print("Starting main programm loop with debugging={}".format(debug))
+
+# anomaly detectors (temperature stream)
+temp_zdet = ZScoreDetector(window_size=50, threshold=3.0)
+temp_ewma = EWMADetector(alpha=0.2, threshold=3.0)
+temp_adpt = AdaptiveThresholdDetector(window_size=20, sensitivity=1.5)
+
+# anomaly detectors (humidity stream)
+hum_zdet = ZScoreDetector(window_size=50, threshold=3.0)
+hum_ewma = EWMADetector(alpha=0.2, threshold=3.0)
+hum_adpt = AdaptiveThresholdDetector(window_size=20, sensitivity=1.5)
+
 while True:
     # Shutdown button check
     if check_shutdown_button():
@@ -102,6 +114,30 @@ while True:
         # get system stats
         cpu = get_cpu_usage()
         mem = get_full_memory_info()
+
+        # anomaly detection (temperature)
+        temp_zscore_anomaly = temp_zdet.update(temp)
+        temp_ewma_anomaly = temp_ewma.update(temp)
+        temp_adaptive_threshold_anomaly = temp_adpt.update(temp)
+
+        # anomaly detection (humidity)
+        hum_zscore_anomaly = hum_zdet.update(hum)
+        hum_ewma_anomaly = hum_ewma.update(hum)
+        hum_adaptive_threshold_anomaly = hum_adpt.update(hum)
+
+        if debug:
+            if temp_zscore_anomaly:
+                print("Anomaly detected: temp_zscore temp={:.1f}C ts={}".format(temp, ts))
+            if temp_ewma_anomaly:
+                print("Anomaly detected: temp_ewma temp={:.1f}C ts={}".format(temp, ts))
+            if temp_adaptive_threshold_anomaly:
+                print("Anomaly detected: temp_adaptive_threshold temp={:.1f}C ts={}".format(temp, ts))
+            if hum_zscore_anomaly:
+                print("Anomaly detected: hum_zscore hum={:.1f}% ts={}".format(hum, ts))
+            if hum_ewma_anomaly:
+                print("Anomaly detected: hum_ewma hum={:.1f}% ts={}".format(hum, ts))
+            if hum_adaptive_threshold_anomaly:
+                print("Anomaly detected: hum_adaptive_threshold hum={:.1f}% ts={}".format(hum, ts))
         
         # oled
         oled.fill(0)
@@ -118,11 +154,24 @@ while True:
             "ts": time.localtime(),
             "temp_c": temp,
             "hum_pct": hum,
+            "temp_zscore_anomaly": temp_zscore_anomaly,
+            "temp_ewma_anomaly": temp_ewma_anomaly,
+            "temp_adaptive_threshold_anomaly": temp_adaptive_threshold_anomaly,
+            "hum_zscore_anomaly": hum_zscore_anomaly,
+            "hum_ewma_anomaly": hum_ewma_anomaly,
+            "hum_adaptive_threshold_anomaly": hum_adaptive_threshold_anomaly,
         }
         client.publish(TOPIC_TELE, ujson.dumps(payload))
         
         # sd card log
-        log_to_sd(ts, temp, hum, cpu, mem)
+        log_to_sd(ts, temp, hum, cpu, mem, {
+            "temp_zscore_anomaly": temp_zscore_anomaly,
+            "temp_ewma_anomaly": temp_ewma_anomaly,
+            "temp_adaptive_threshold_anomaly": temp_adaptive_threshold_anomaly,
+            "hum_zscore_anomaly": hum_zscore_anomaly,
+            "hum_ewma_anomaly": hum_ewma_anomaly,
+            "hum_adaptive_threshold_anomaly": hum_adaptive_threshold_anomaly,
+        })
 
         
         # debugging logs

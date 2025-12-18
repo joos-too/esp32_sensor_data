@@ -6,12 +6,13 @@ import math
 # =======================================
 class ZScoreDetector:
     def __init__(self, window_size=10, threshold=3.0):
-        self.window = deque(maxlen=window_size)
+        self.window = deque((), window_size)
+        self.window_size = window_size
         self.threshold = threshold
 
     def update(self, value):
         self.window.append(value)
-        if len(self.window) < self.window.maxlen:
+        if len(self.window) < self.window_size:
             return False  # Noch nicht genug Daten
         mean = sum(self.window) / len(self.window)
         std = math.sqrt(sum((x - mean) ** 2 for x in self.window) / len(self.window))
@@ -51,12 +52,13 @@ class EWMADetector:
 # =======================================
 class AdaptiveThresholdDetector:
     def __init__(self, window_size=20, sensitivity=1.5):
-        self.window = deque(maxlen=window_size)
+        self.window = deque((), window_size)
+        self.window_size = window_size
         self.sensitivity = sensitivity
 
     def update(self, value):
         self.window.append(value)
-        if len(self.window) < self.window.maxlen:
+        if len(self.window) < self.window_size:
             return False
         mean = sum(self.window) / len(self.window)
         max_dev = max(abs(x - mean) for x in self.window)

@@ -115,6 +115,11 @@ CLIENT_ID     = b"esp32-" + ubinascii.hexlify(esp32.raw_temperature().to_bytes(2
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 context.verify_mode = ssl.CERT_NONE
 
+def _err_info(e):
+    err = e.args[0] if isinstance(e, OSError) and e.args else None
+    err_name = errno.errorcode.get(abs(err)) if isinstance(err, int) else None
+    return err, err_name
+
 def mqtt_client_create():
     lwt_msg = ujson.dumps({"device_id": DEVICE_ID, "status": "offline"})
     c = MQTTClient(client_id=CLIENT_ID,
@@ -132,21 +137,32 @@ client = mqtt_client_create()
 
 def mqtt_connect():
     global client
-    try:
-        client.connect()
-        online = ujson.dumps({"device_id": DEVICE_ID, "status": "online"})
-        client.publish(TOPIC_STATUS, online, retain=True)
-        print("MQTT connected:", MQTT_BROKER)
-    except Exception as e:
-        err = e.args[0] if isinstance(e, OSError) and e.args else None
-        err_name = errno.errorcode.get(abs(err)) if isinstance(err, int) else None
-        if err is not None:
-            print("MQTT connect failed:", err, err_name or "UNKNOWN")
-        else:
-            print("MQTT connect failed:", e)
-        time.sleep(3)
-        client = mqtt_client_create()
-        mqtt_connect()
+    backoff_s = 2
+    while True:
+        try:
+            if not wifi.isconnected():
+                print("WiFi disconnected; reconnecting...")
+                wifi.connect(WIFI_SSID, WIFI_PASSWORD)
+                while not wifi.isconnected():
+                    time.sleep(1)
+            client.connect()
+            online = ujson.dumps({"device_id": DEVICE_ID, "status": "online"})
+            client.publish(TOPIC_STATUS, online, retain=True)
+            print("MQTT connected:", MQTT_BROKER)
+            return
+        except Exception as e:
+            err, err_name = _err_info(e)
+            if err is not None:
+                print("MQTT connect failed:", err, err_name or "UNKNOWN")
+            else:
+                print("MQTT connect failed:", e)
+            time.sleep(backoff_s)
+            backoff_s = min(backoff_s * 2, 30)
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+            client = mqtt_client_create()
         
 mqtt_connect()
 print("Initial MQTT connection succeeded")

@@ -79,7 +79,7 @@ print("Starting main programm loop with debugging={}".format(debug))
 
 # anomaly detectors (temperature stream)
 temp_zdet = ZScoreDetector(window_size=250, threshold=2.5)
-temp_ewma = EWMADetector(alpha=0.1, threshold=3.0)
+temp_ewma = EWMADetector(alpha=0.15, threshold=3.0)
 temp_adpt = AdaptiveThresholdDetector(window_size=100, sensitivity=2)
 
 # anomaly detectors (humidity stream)
@@ -100,7 +100,7 @@ while True:
         last_read = now
     
     try:
-        # sensor measurements every ~2s
+        # sensor measurements every ~5s
         try:
             dht22.measure()
             temp = round(dht22.temperature(), 1)
@@ -108,7 +108,7 @@ while True:
             ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*time.localtime())
         except OSError as e:
             print("DHT read error:", e)
-            time.sleep(2)
+            time.sleep(5)
             continue
         
         # get system stats
@@ -178,10 +178,19 @@ while True:
         if debug:
             print(f"{ts} Temp:{temp:.1f}C Hum:{hum:.1f}% MP_CPU:{cpu['mp_task']:.1f}% MP_RAM:{mem['mp_used_kb']}/{mem['mp_total_kb']}KB IDF_RAM:{mem['idf_total_kb']-mem['idf_free_kb']}/{mem['idf_total_kb']}KB CPU_TOTAL:{cpu['total']:.1f}% CPU0:{cpu['core0']:.1f}% CPU1:{cpu['core1']:.1f}%")
 
-        time.sleep(1.6)
+        time.sleep(4.6)
     except OSError as e:
         # Network/MQTT error
-        print("MQTT/Network/OS error:", e)
+        err = e.args[0] if e.args else None
+        try:
+            import uerrno as errno
+            err_name = errno.errorcode.get(abs(err)) if isinstance(err, int) else None
+        except Exception:
+            err_name = None
+        if err is not None:
+            print("MQTT/Network/OS error:", err, err_name or "UNKNOWN")
+        else:
+            print("MQTT/Network/OS error:", e)
         try:
             client.disconnect()
         except Exception:

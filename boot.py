@@ -1,4 +1,5 @@
 import os, time, network, ntptime, ssl, ubinascii, ujson, esp32
+import uerrno as errno
 from machine import Pin, SDCard
 from umqtt.simple import MQTTClient
 
@@ -137,7 +138,12 @@ def mqtt_connect():
         client.publish(TOPIC_STATUS, online, retain=True)
         print("MQTT connected:", MQTT_BROKER)
     except Exception as e:
-        print("MQTT connect failed:", e)
+        err = e.args[0] if isinstance(e, OSError) and e.args else None
+        err_name = errno.errorcode.get(abs(err)) if isinstance(err, int) else None
+        if err is not None:
+            print("MQTT connect failed:", err, err_name or "UNKNOWN")
+        else:
+            print("MQTT connect failed:", e)
         time.sleep(3)
         client = mqtt_client_create()
         mqtt_connect()

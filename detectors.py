@@ -36,14 +36,13 @@ class EWMADetector:
             self.variance = 0.0
             return False
 
-        # Update EWMA und Varianz rekursiv
+        # Use the previous EWMA as the baseline to avoid shrinking the residual.
         diff = value - self.ewma
-        self.ewma += self.alpha * diff
         self.variance = (1 - self.alpha) * (self.variance + self.alpha * diff * diff)
-
         std = math.sqrt(self.variance)
-        deviation = abs(value - self.ewma)
-        return deviation > self.threshold * std if std > 0 else False
+        is_anomaly = abs(diff) > self.threshold * std if std > 0 else False
+        self.ewma += self.alpha * diff
+        return is_anomaly
 
 
 # =======================================
@@ -58,6 +57,7 @@ class AdaptiveThresholdDetector:
 
     def update(self, value):
         if len(self.window) < self.window_size:
+            self.window.append(value)
             return False
         mean = sum(self.window) / len(self.window)
         max_dev = max(abs(x - mean) for x in self.window)

@@ -38,6 +38,24 @@ def safe_shutdown():
     
     print("Device can now be powered off safely.")
 
+def log_error_to_sd(message):
+    """
+    Append an error message to a daily log file on the SD card.
+    Uses one file per day to avoid unbounded growth.
+    """
+    if "sd" not in os.listdir("/"):
+        return
+
+    try:
+        t = time.localtime()
+        date_str = "{:04d}-{:02d}-{:02d}".format(*t)
+        ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*t)
+        filepath = "/sd/errors_{}.log".format(date_str)
+        with open(filepath, "a") as f:
+            f.write("{} | {}\n".format(ts, message))
+    except Exception as e:
+        print("SD error-log write error:", e)
+
 # sd logger
 def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
     """
@@ -69,7 +87,9 @@ def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
             f.write(line + "\n")
 
     except Exception as e:
-        print("SD write error:", e)
+        msg = "SD write error: {}".format(e)
+        print(msg)
+        log_error_to_sd(msg)
 
 
 # main loop
@@ -78,14 +98,14 @@ debug=True
 print("Starting main programm loop with debugging={}".format(debug))
 
 # anomaly detectors (temperature stream)
-temp_zdet = ZScoreDetector(window_size=250, threshold=2.5)
-temp_ewma = EWMADetector(alpha=0.15, threshold=3.0)
-temp_adpt = AdaptiveThresholdDetector(window_size=100, sensitivity=2)
+temp_zdet = ZScoreDetector(window_size=90, threshold=3)
+temp_ewma = EWMADetector(alpha=0.2, threshold=2)
+temp_adpt = AdaptiveThresholdDetector(window_size=60, sensitivity=2.0)
 
 # anomaly detectors (humidity stream)
-hum_zdet = ZScoreDetector(window_size=250, threshold=2.5)
-hum_ewma = EWMADetector(alpha=0.15, threshold=3.0)
-hum_adpt = AdaptiveThresholdDetector(window_size=100, sensitivity=2)
+hum_zdet = ZScoreDetector(window_size=90, threshold=3)
+hum_ewma = EWMADetector(alpha=0.2, threshold=2)
+hum_adpt = AdaptiveThresholdDetector(window_size=60, sensitivity=2.0)
 
 while True:
     # Shutdown button check
@@ -108,6 +128,7 @@ while True:
             ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*time.localtime())
         except OSError as e:
             print("DHT read error:", e)
+            log_error_to_sd("DHT read error: {}".format(e))
             time.sleep(2)
             continue
         
@@ -188,9 +209,11 @@ while True:
         except Exception:
             err_name = None
         if err is not None:
-            print("MQTT/Network/OS error:", err, err_name or "UNKNOWN")
+            msg = "MQTT/Network/OS error: {} {}".format(err, err_name or "UNKNOWN")
         else:
-            print("MQTT/Network/OS error:", e)
+            msg = "MQTT/Network/OS error: {}".format(e)
+        print(msg)
+        log_error_to_sd(msg)
         try:
             client.disconnect()
         except Exception:

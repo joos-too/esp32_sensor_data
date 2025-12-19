@@ -100,12 +100,12 @@ print("Starting main programm loop with debugging={}".format(debug))
 # anomaly detectors (temperature stream)
 temp_zdet = ZScoreDetector(window_size=90, threshold=3)
 temp_ewma = EWMADetector(alpha=0.2, threshold=2)
-temp_adpt = AdaptiveThresholdDetector(window_size=60, sensitivity=2.0)
+temp_adpt = AdaptiveThresholdDetector(window_size=60, sensitivity=1.5)
 
 # anomaly detectors (humidity stream)
 hum_zdet = ZScoreDetector(window_size=90, threshold=3)
 hum_ewma = EWMADetector(alpha=0.2, threshold=2)
-hum_adpt = AdaptiveThresholdDetector(window_size=60, sensitivity=2.0)
+hum_adpt = AdaptiveThresholdDetector(window_size=60, sensitivity=1.5)
 
 while True:
     # Shutdown button check

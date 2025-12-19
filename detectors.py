@@ -57,13 +57,13 @@ class AdaptiveThresholdDetector:
         self.sensitivity = sensitivity
 
     def update(self, value):
-        self.window.append(value)
         if len(self.window) < self.window_size:
             return False
         mean = sum(self.window) / len(self.window)
         max_dev = max(abs(x - mean) for x in self.window)
         upper = mean + self.sensitivity * max_dev
         lower = mean - self.sensitivity * max_dev
+        self.window.append(value)
         return value > upper or value < lower
 
 

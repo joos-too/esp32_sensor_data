@@ -3,7 +3,7 @@ import time, ujson, gc, esp32, os
 import dht, ssd1306
 import sys
 from resources import get_cpu_usage, get_full_memory_info
-from boot_globals import wifi, client, DEVICE_ID, TOPIC_TELE, mqtt_connect
+import boot_globals as bg
 from detectors import ZScoreDetector, EWMADetector, AdaptiveThresholdDetector
 
 # setup dht22 and oled Display
@@ -171,7 +171,7 @@ while True:
         
         # MQTT Publish (JSON)
         payload = {
-            "device_id": DEVICE_ID,
+            "device_id": bg.DEVICE_ID,
             "ts": time.localtime(),
             "temp_c": temp,
             "hum_pct": hum,
@@ -182,7 +182,7 @@ while True:
             "hum_ewma_anomaly": hum_ewma_anomaly,
             "hum_adaptive_threshold_anomaly": hum_adaptive_threshold_anomaly,
         }
-        client.publish(TOPIC_TELE, ujson.dumps(payload))
+        bg.client.publish(bg.TOPIC_TELE, ujson.dumps(payload))
         
         # sd card log
         log_to_sd(ts, temp, hum, cpu, mem, {
@@ -218,5 +218,5 @@ while True:
             client.disconnect()
         except Exception:
             pass
-        mqtt_connect()
+        bg.mqtt_connect()
         time.sleep(2)

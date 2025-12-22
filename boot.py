@@ -2,6 +2,7 @@ import os, time, network, ntptime, ssl, ubinascii, ujson, esp32
 import uerrno as errno
 from machine import Pin, SDCard
 from umqtt.simple import MQTTClient
+import boot_globals as bg
 
 # =======================
 # ---- CONFIG LOAD  -----
@@ -163,6 +164,10 @@ def mqtt_connect():
             except Exception:
                 pass
             client = mqtt_client_create()
+            try:
+                bg.client = client
+            except Exception:
+                pass
         
 mqtt_connect()
 print("Initial MQTT connection succeeded")
@@ -170,7 +175,6 @@ print("Initial MQTT connection succeeded")
 # =======================
 # ---- EXPORT GLOBALS ---
 # =======================
-import boot_globals as bg
 bg.wifi = wifi
 bg.client = client
 bg.DEVICE_ID = DEVICE_ID

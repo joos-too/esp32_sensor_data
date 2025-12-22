@@ -1,7 +1,6 @@
 from machine import Pin, SoftI2C
-import time, ujson, gc, esp32, os
+import time, ujson, esp32, os
 import dht, ssd1306
-import sys
 from resources import get_cpu_usage, get_full_memory_info
 import boot_globals as bg
 from detectors import ZScoreDetector, EWMADetector, AdaptiveThresholdDetector
@@ -77,10 +76,11 @@ def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
         # header if file is new
         if filename not in os.listdir("/sd"):
             with open(filepath, "w") as f:
-                f.write("ts,temp,hum,mp_cpu,mp_used_kb,mp_free_kb,temp_zscore_anomaly,temp_ewma_anomaly,temp_adaptive_threshold_anomaly,hum_zscore_anomaly,hum_ewma_anomaly,hum_adaptive_threshold_anomaly\n")
+                f.write("ts,temp,hum,mp_cpu,cpu_total,cpu_core0,cpu_core1,mp_used_kb,mp_free_kb,mp_total_kb,idf_used_kb,idf_free_kb,idf_total_kb,temp_zscore_anomaly,temp_ewma_anomaly,temp_adaptive_threshold_anomaly,hum_zscore_anomaly,hum_ewma_anomaly,hum_adaptive_threshold_anomaly\n")
 
         # timestamp line
-        line = f"{ts},{temp:.1f},{hum:.1f},{cpu['mp_task']:.1f},{mem['mp_used_kb']},{mem['mp_free_kb']},{anomalies['temp_zscore_anomaly']},{anomalies['temp_ewma_anomaly']},{anomalies['temp_adaptive_threshold_anomaly']},{anomalies['hum_zscore_anomaly']},{anomalies['hum_ewma_anomaly']},{anomalies['hum_adaptive_threshold_anomaly']}"
+        idf_used_kb = mem["idf_total_kb"] - mem["idf_free_kb"]
+        line = f"{ts},{temp:.1f},{hum:.1f},{cpu['mp_task']:.1f},{cpu['total']:.1f},{cpu['core0']:.1f},{cpu['core1']:.1f},{mem['mp_used_kb']},{mem['mp_free_kb']},{mem['mp_total_kb']},{idf_used_kb},{mem['idf_free_kb']},{mem['idf_total_kb']},{anomalies['temp_zscore_anomaly']},{anomalies['temp_ewma_anomaly']},{anomalies['temp_adaptive_threshold_anomaly']},{anomalies['hum_zscore_anomaly']},{anomalies['hum_ewma_anomaly']},{anomalies['hum_adaptive_threshold_anomaly']}"
 
         # append new row
         with open(filepath, "a") as f:
@@ -215,7 +215,7 @@ while True:
         print(msg)
         log_error_to_sd(msg)
         try:
-            client.disconnect()
+            bg.client.disconnect()
         except Exception:
             pass
         bg.mqtt_connect()

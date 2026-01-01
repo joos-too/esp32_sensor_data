@@ -208,10 +208,23 @@ while True:
             err_name = errno.errorcode.get(abs(err)) if isinstance(err, int) else None
         except Exception:
             err_name = None
+        try:
+            wifi_connected = bg.wifi.isconnected()
+            wifi_status = bg.wifi.status()
+            wifi_ip = bg.wifi.ifconfig()
+        except Exception:
+            wifi_connected = None
+            wifi_status = None
+            wifi_ip = None
+
         if err is not None:
-            msg = "MQTT/Network/OS error: {} {}".format(err, err_name or "UNKNOWN")
+            msg = "MQTT/Network/OS error: {} {} wifi_connected={} wifi_status={} ip={}".format(
+                err, err_name or "UNKNOWN", wifi_connected, wifi_status, wifi_ip
+            )
         else:
-            msg = "MQTT/Network/OS error: {}".format(e)
+            msg = "MQTT/Network/OS error: {} wifi_connected={} wifi_status={} ip={}".format(
+                e, wifi_connected, wifi_status, wifi_ip
+            )
         print(msg)
         log_error_to_sd(msg)
         try:

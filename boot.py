@@ -1,4 +1,4 @@
-import os, time, network, ntptime, ssl, ubinascii, ujson, esp32
+import os, time, network, ntptime, ssl, ubinascii, ujson, esp32, machine
 import uerrno as errno
 from machine import Pin, SDCard
 from umqtt.simple import MQTTClient
@@ -70,9 +70,26 @@ WIFI_SSID = wifi_cfg.get("ssid")
 WIFI_PASSWORD = wifi_cfg.get("password")
 WIFI_HOSTNAME = wifi_cfg.get("hostname", "ESP32-Sensor")
 
-wifi = network.WLAN(network.STA_IF)
-wifi.active(True)
-wifi.config(dhcp_hostname=WIFI_HOSTNAME)
+def _wifi_init():
+    w = network.WLAN(network.STA_IF)
+    w.active(True)
+    w.config(dhcp_hostname=WIFI_HOSTNAME)
+    return w
+
+def _wifi_hard_reset():
+    global wifi
+    try:
+        wifi.active(False)
+    except Exception:
+        pass
+    wifi = _wifi_init()
+    try:
+        bg.wifi = wifi
+    except Exception:
+        pass
+    print("WiFi hard reset")
+
+wifi = _wifi_init()
 
 wifi.connect(WIFI_SSID, WIFI_PASSWORD)
 
@@ -111,10 +128,85 @@ BASE_TOPIC_ROOT = mqtt_cfg.get("base_topic_root", "sensors/esp32")
 BASE_TOPIC    = "{}/{}/".format(BASE_TOPIC_ROOT, DEVICE_ID)
 TOPIC_TELE    = BASE_TOPIC + "telemetry"
 TOPIC_STATUS  = BASE_TOPIC + "status"
-CLIENT_ID     = b"esp32-" + ubinascii.hexlify(esp32.raw_temperature().to_bytes(2, 'big'))
+CLIENT_ID     = b"esp32-" + ubinascii.hexlify(machine.unique_id())
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 context.verify_mode = ssl.CERT_NONE
+
+def _wifi_status_name(status):
+    names = {
+        getattr(network, "STAT_IDLE", 1000): "IDLE",
+        getattr(network, "STAT_CONNECTING", 1001): "CONNECTING",
+        getattr(network, "STAT_GOT_IP", 1010): "GOT_IP",
+        getattr(network, "STAT_NO_AP_FOUND", 201): "NO_AP_FOUND",
+        getattr(network, "STAT_WRONG_PASSWORD", 202): "WRONG_PASSWORD",
+        getattr(network, "STAT_CONNECT_FAIL", 203): "CONNECT_FAIL",
+    }
+    return names.get(status, str(status))
+
+def _scan_ap_rssi(target_ssid):
+    try:
+        aps = wifi.scan()
+    except Exception:
+        return None
+    for ap in aps:
+        ssid = ap[0].decode() if isinstance(ap[0], bytes) else ap[0]
+        if ssid == target_ssid:
+            return ap[3]
+    return None
+
+def _wifi_reconnect(timeout_s=30):
+    if wifi.isconnected():
+        return True
+
+    start = time.ticks_ms()
+    attempts = 0
+    while time.ticks_diff(time.ticks_ms(), start) < timeout_s * 1000:
+        status = wifi.status()
+        if status == getattr(network, "STAT_CONNECTING", 1001):
+            time.sleep(1)
+            continue
+
+        try:
+            wifi.disconnect()
+        except Exception:
+            pass
+
+        try:
+            wifi.active(False)
+            time.sleep(0.2)
+            wifi.active(True)
+            wifi.config(dhcp_hostname=WIFI_HOSTNAME)
+        except Exception:
+            pass
+
+        print("WiFi reconnecting; status={}".format(_wifi_status_name(status)))
+        wifi.connect(WIFI_SSID, WIFI_PASSWORD)
+
+        # Wait for connect
+        for _ in range(10):
+            if wifi.isconnected():
+                return True
+            time.sleep(1)
+
+        attempts += 1
+        status = wifi.status()
+
+        if status in (
+            getattr(network, "STAT_WRONG_PASSWORD", 202),
+            getattr(network, "STAT_NO_AP_FOUND", 201),
+        ):
+            rssi = _scan_ap_rssi(WIFI_SSID)
+            print(
+                "WiFi reconnect failed; status={} rssi={}".format(
+                    _wifi_status_name(status), rssi
+                )
+            )
+            time.sleep(5)
+        if attempts % 3 == 0:
+            _wifi_hard_reset()
+
+    return False
 
 def _err_info(e):
     err = e.args[0] if isinstance(e, OSError) and e.args else None
@@ -143,9 +235,13 @@ def mqtt_connect():
         try:
             if not wifi.isconnected():
                 print("WiFi disconnected; reconnecting...")
-                wifi.connect(WIFI_SSID, WIFI_PASSWORD)
-                while not wifi.isconnected():
-                    time.sleep(1)
+                if not _wifi_reconnect(timeout_s=30):
+                    print("WiFi reconnect failed; status={}".format(
+                        _wifi_status_name(wifi.status())
+                    ))
+                    time.sleep(backoff_s)
+                    backoff_s = min(backoff_s * 2, 30)
+                    continue
             client.connect()
             online = ujson.dumps({"device_id": DEVICE_ID, "status": "online"})
             client.publish(TOPIC_STATUS, online, retain=True)

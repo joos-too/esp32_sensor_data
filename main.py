@@ -3,6 +3,7 @@ import time, ujson, esp32, os
 import dht, ssd1306
 from resources import get_cpu_usage, get_full_memory_info
 import boot_globals as bg
+import uerrno as errno
 from detectors import ZScoreDetector, EWMADetector, AdaptiveThresholdDetector
 
 # setup dht22 and oled Display
@@ -53,7 +54,8 @@ def log_error_to_sd(message):
         with open(filepath, "a") as f:
             f.write("{} | {}\n".format(ts, message))
     except Exception as e:
-        print("SD error-log write error:", e)
+        if debug:
+            print("SD error-log write error:", e)
 
 # sd logger
 def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
@@ -88,7 +90,8 @@ def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
 
     except Exception as e:
         msg = "SD write error: {}".format(e)
-        print(msg)
+        if debug:
+            print(msg)
         log_error_to_sd(msg)
 
 
@@ -127,7 +130,8 @@ while True:
             hum = round(dht22.humidity(), 1)
             ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*time.localtime())
         except OSError as e:
-            print("DHT read error:", e)
+            if debug:
+                print("DHT read error:", e)
             log_error_to_sd("DHT read error: {}".format(e))
             time.sleep(2)
             continue
@@ -201,13 +205,14 @@ while True:
 
         time.sleep(1.6)
     except OSError as e:
-        # Network/MQTT error
+        # Network/MQTT error, try to get error code
         err = e.args[0] if e.args else None
         try:
-            import uerrno as errno
             err_name = errno.errorcode.get(abs(err)) if isinstance(err, int) else None
         except Exception:
             err_name = None
+
+        # try to get wifi status
         try:
             wifi_connected = bg.wifi.isconnected()
             wifi_status = bg.wifi.status()
@@ -225,7 +230,8 @@ while True:
             msg = "MQTT/Network/OS error: {} wifi_connected={} wifi_status={} ip={}".format(
                 e, wifi_connected, wifi_status, wifi_ip
             )
-        print(msg)
+        if debug:
+            print(msg)
         log_error_to_sd(msg)
         try:
             bg.client.disconnect()
@@ -233,3 +239,6 @@ while True:
             pass
         bg.mqtt_connect()
         time.sleep(2)
+    except Exception as e:
+        # catch-all to prevent crashes
+        print("Unexpected error:", e)

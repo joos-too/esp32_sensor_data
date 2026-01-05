@@ -241,4 +241,7 @@ while True:
         time.sleep(2)
     except Exception as e:
         # catch-all to prevent crashes
-        print("Unexpected error:", e)
+        msg = "Unexpected error: {}".format(e)
+        if debug:
+            print(msg)
+        log_error_to_sd(msg)

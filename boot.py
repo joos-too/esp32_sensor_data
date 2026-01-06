@@ -71,26 +71,25 @@ WIFI_PASSWORD = wifi_cfg.get("password")
 WIFI_HOSTNAME = wifi_cfg.get("hostname", "ESP32-Sensor")
 
 def _wifi_init():
-    w = network.WLAN(network.STA_IF)
+    w = network.WLAN()
     w.active(True)
-    w.config(dhcp_hostname=WIFI_HOSTNAME)
+    w.config(dhcp_hostname=WIFI_HOSTNAME, reconnects=10)
     return w
 
 def _wifi_hard_reset():
     global wifi
     try:
         wifi.active(False)
-    except Exception:
-        pass
+    except Exception as e:
+        print("WiFi hard reset failed:", e)
     wifi = _wifi_init()
     try:
         bg.wifi = wifi
-    except Exception:
-        pass
+    except Exception as e:
+        print("WiFi hard reset failed:", e)
     print("WiFi hard reset")
 
 wifi = _wifi_init()
-
 wifi.connect(WIFI_SSID, WIFI_PASSWORD)
 
 print("Connecting to Wifi", end="")

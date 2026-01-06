@@ -5,6 +5,33 @@ from umqtt.simple import MQTTClient
 import boot_globals as bg
 
 # =======================
+# ---- SD-CARD MOUNT ----
+# =======================
+MOUNT_POINT = "/sd"
+PINS = dict(sck=14, miso=26, mosi=27, cs=12) # SPI pins
+
+def mount_sd():
+    """Mount SD card if present."""
+    try:
+        sd = SDCard(
+            slot=2,  # SPI mode
+            sck=Pin(PINS["sck"]),
+            mosi=Pin(PINS["mosi"]),
+            miso=Pin(PINS["miso"]),
+            cs=Pin(PINS["cs"]),
+            freq=4_000_000,
+        )
+        os.mount(sd, MOUNT_POINT)
+        print(f"SD card mounted at {MOUNT_POINT}")
+        print("Contents:", os.listdir(MOUNT_POINT))
+        return sd
+    except OSError as e:
+        print(f"SD card not mounted ({e})  — continuing without SD") # Common causes: no card inserted, bad wiring, wrong format
+        return None
+
+mount_sd()
+
+# =======================
 # ---- CONFIG LOAD  -----
 # =======================
 def load_config():
@@ -33,30 +60,7 @@ def load_config():
     print("No config file found")
     return {}
 
-# =======================
-# ---- SD-CARD MOUNT ----
-# =======================
-MOUNT_POINT = "/sd"
-PINS = dict(sck=14, miso=26, mosi=27, cs=12) # SPI pins
-
-def mount_sd():
-    """Mount SD card if present."""
-    try:
-        sd = SDCard(
-            slot=2,  # SPI mode
-            sck=Pin(PINS["sck"]),
-            mosi=Pin(PINS["mosi"]),
-            miso=Pin(PINS["miso"]),
-            cs=Pin(PINS["cs"]),
-            freq=4_000_000,
-        )
-        os.mount(sd, MOUNT_POINT)
-        print(f"SD card mounted at {MOUNT_POINT}")
-        print("Contents:", os.listdir(MOUNT_POINT))
-        return sd
-    except OSError as e:
-        print(f"SD card not mounted ({e})  — continuing without SD") # Common causes: no card inserted, bad wiring, wrong format
-        return None
+CONFIG = load_config()
 
 # =======================
 # ---- WIFI CONNECT -----
@@ -85,6 +89,16 @@ def _wifi_hard_reset():
         pass
     print("WiFi hard reset")
 
+wifi = _wifi_init()
+
+wifi.connect(WIFI_SSID, WIFI_PASSWORD)
+
+print("Connecting to Wifi", end="")
+while not wifi.isconnected():
+    print(".", end="")
+    time.sleep(1)
+print("\nConnected:", wifi.ifconfig())
+
 # =======================
 # ---- NTP SYNC ---------
 # =======================
@@ -98,6 +112,8 @@ def sync_time():
               "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*t))
     except Exception as e:
         print("NTP sync failed:", e)
+
+sync_time()
 
 # =======================
 # ---- MQTT CLIENT ------
@@ -210,6 +226,7 @@ def mqtt_client_create():
     c.set_last_will(TOPIC_STATUS, lwt_msg)
     return c
 
+client = mqtt_client_create()
 
 def mqtt_connect():
     global client
@@ -247,27 +264,7 @@ def mqtt_connect():
                 bg.client = client
             except Exception:
                 pass
-# =======================
-# --- EXECUTE STARTUP ---
-# =======================
-mount_sd()
-# load config from flash or SD
-CONFIG = load_config()
 
-# connect to WiFi and sync time
-wifi = _wifi_init()
-wifi.connect(WIFI_SSID, WIFI_PASSWORD)
-
-print("Connecting to Wifi", end="")
-while not wifi.isconnected():
-    print(".", end="")
-    time.sleep(1)
-print("\nConnected:", wifi.ifconfig())
-
-sync_time()
-
-# connect to MQTT broker
-client = mqtt_client_create()
 mqtt_connect()
 print("Initial MQTT connection succeeded")
 

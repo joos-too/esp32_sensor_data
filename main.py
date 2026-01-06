@@ -260,10 +260,7 @@ while True:
     except OSError as e:
         # Network/MQTT error, try to get error code
         err = e.args[0] if e.args else None
-        try:
-            err_name = errno.errorcode.get(abs(err)) if isinstance(err, int) else None
-        except Exception:
-            err_name = None
+        err_name = errno.errorcode.get(abs(err)) if isinstance(err, int) else None
 
         # try to get wifi status
         try:
@@ -271,6 +268,7 @@ while True:
             wifi_status = bg.wifi.status()
             wifi_ip = bg.wifi.ifconfig()
         except Exception:
+            print("WiFi status fetch failed:", e)
             wifi_connected = None
             wifi_status = None
             wifi_ip = None
@@ -289,7 +287,7 @@ while True:
         try:
             bg.client.disconnect()
         except Exception:
-            pass
+            print("MQTT disconnect failed:", e)
         bg.mqtt_connect()
         time.sleep(2)
     except Exception as e:

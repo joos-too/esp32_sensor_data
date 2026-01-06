@@ -242,7 +242,7 @@ def mqtt_connect():
                     time.sleep(backoff_s)
                     backoff_s = min(backoff_s * 2, 30)
                     continue
-            client.connect()
+            client.connect(timeout=5)
             online = ujson.dumps({"device_id": DEVICE_ID, "status": "online"})
             client.publish(TOPIC_STATUS, online, retain=True)
             print("MQTT connected:", MQTT_BROKER)

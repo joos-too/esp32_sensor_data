@@ -130,13 +130,12 @@ def build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly):
         anomalies[keys[1]] = hum_anomaly
     return anomalies
 
-def build_measurement_entry(ts_tuple, temp, hum, anomalies):
+def build_measurement_entry(ts_tuple, temp, hum):
     entry = {
         "ts": ts_tuple,
         "temp_c": temp,
         "hum_pct": hum,
     }
-    entry.update(anomalies)
     return entry
 
 def build_measurement_payload(ts_tuple, temp, hum, anomalies):
@@ -224,13 +223,13 @@ while True:
         oled.show()
         
         # MQTT publish only on anomaly windows, otherwise send periodic ping.
-        measurement_entry = build_measurement_entry(ts_tuple, temp, hum, anomalies)
-        anomaly_detected = temp_anomaly or hum_anomaly
-
-        if anomaly_detected:
+        if temp_anomaly or hum_anomaly:
+            if debug: print("Anomaly detected, publishing to MQTT...")
             payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
             payload["event"] = "anomaly"
             payload["window_before"] = list(measurement_history)
+            measurement_history = deque((), MEASUREMENTS_PER_WINDOW) # clear history
+            if debug: print(payload)
             bg.client.publish(bg.TOPIC_TELE, ujson.dumps(payload))
             post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
             ping_counter = 0
@@ -241,13 +240,13 @@ while True:
             post_anomaly_remaining -= 1
             ping_counter = 0
         else:
+            measurement_entry = build_measurement_entry(ts_tuple, temp, hum)
+            measurement_history.append(measurement_entry)
             ping_counter += 1
             if ping_counter >= PING_EVERY_N:
                 bg.client.ping()
                 ping_counter = 0
 
-        measurement_history.append(measurement_entry)
-        
         # sd card log
         log_to_sd(ts, temp, hum, cpu, mem, anomalies)
 

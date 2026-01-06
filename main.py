@@ -1,5 +1,6 @@
 from machine import Pin, SoftI2C
 import time, ujson, esp32, os
+from collections import deque
 import dht, ssd1306
 from resources import get_cpu_usage, get_full_memory_info
 import boot_globals as bg
@@ -20,6 +21,10 @@ DETECTOR_KEYS = {
     "ewma": ("temp_ewma_anomaly", "hum_ewma_anomaly"),
     "adaptive_threshold": ("temp_adaptive_threshold_anomaly", "hum_adaptive_threshold_anomaly"),
 }
+
+MEASUREMENTS_PER_WINDOW = 15
+PING_EVERY_N = 15
+POST_ANOMALY_SEND_COUNT = 15
 
 def check_shutdown_button():
     """Check if shutdown button is pressed."""
@@ -125,6 +130,25 @@ def build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly):
         anomalies[keys[1]] = hum_anomaly
     return anomalies
 
+def build_measurement_entry(ts_tuple, temp, hum, anomalies):
+    entry = {
+        "ts": ts_tuple,
+        "temp_c": temp,
+        "hum_pct": hum,
+    }
+    entry.update(anomalies)
+    return entry
+
+def build_measurement_payload(ts_tuple, temp, hum, anomalies):
+    payload = {
+        "device_id": bg.DEVICE_ID,
+        "ts": ts_tuple,
+        "temp_c": temp,
+        "hum_pct": hum,
+    }
+    payload.update(anomalies)
+    return payload
+
 # main loop
 last_read = 0
 debug=True
@@ -142,6 +166,10 @@ except Exception as e:
 if debug:
     print("Active detector:", detector_type)
     print("Detector params:", detector_params)
+
+measurement_history = deque((), MEASUREMENTS_PER_WINDOW)
+post_anomaly_remaining = 0
+ping_counter = 0
 
 while True:
     # Shutdown button check
@@ -161,7 +189,8 @@ while True:
             dht22.measure()
             temp = round(dht22.temperature(), 1)
             hum = round(dht22.humidity(), 1)
-            ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*time.localtime())
+            ts_tuple = time.localtime()
+            ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*ts_tuple)
         except OSError as e:
             msg = "DHT read error: {}".format(e)
             if debug:
@@ -194,15 +223,30 @@ while True:
         oled.text(f"RAM: {mem['mp_used_kb']}/{mem['mp_total_kb']}KB", 0, 50)
         oled.show()
         
-        # MQTT Publish (JSON)
-        payload = {
-            "device_id": bg.DEVICE_ID,
-            "ts": time.localtime(),
-            "temp_c": temp,
-            "hum_pct": hum,
-        }
-        payload.update(anomalies)
-        bg.client.publish(bg.TOPIC_TELE, ujson.dumps(payload))
+        # MQTT publish only on anomaly windows, otherwise send periodic ping.
+        measurement_entry = build_measurement_entry(ts_tuple, temp, hum, anomalies)
+        anomaly_detected = temp_anomaly or hum_anomaly
+
+        if anomaly_detected:
+            payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
+            payload["event"] = "anomaly"
+            payload["window_before"] = list(measurement_history)
+            bg.client.publish(bg.TOPIC_TELE, ujson.dumps(payload))
+            post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
+            ping_counter = 0
+        elif post_anomaly_remaining > 0:
+            payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
+            payload["event"] = "anomaly_followup"
+            bg.client.publish(bg.TOPIC_TELE, ujson.dumps(payload))
+            post_anomaly_remaining -= 1
+            ping_counter = 0
+        else:
+            ping_counter += 1
+            if ping_counter >= PING_EVERY_N:
+                bg.client.ping()
+                ping_counter = 0
+
+        measurement_history.append(measurement_entry)
         
         # sd card log
         log_to_sd(ts, temp, hum, cpu, mem, anomalies)

@@ -135,8 +135,13 @@ try:
     temp_det = create_detector(detector_type, **detector_params)
     hum_det = create_detector(detector_type, **detector_params)
 except Exception as e:
-    print("Detector init failed: {}".format(e))
-print("Active detector:", detector_type)
+    msg = "Detector init failed: {}".format(e)
+    if debug:
+        print(msg)
+    log_error_to_sd(msg)
+if debug:
+    print("Active detector:", detector_type)
+    print("Detector params:", detector_params)
 
 while True:
     # Shutdown button check
@@ -158,9 +163,10 @@ while True:
             hum = round(dht22.humidity(), 1)
             ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*time.localtime())
         except OSError as e:
+            msg = "DHT read error: {}".format(e)
             if debug:
-                print("DHT read error:", e)
-            log_error_to_sd("DHT read error: {}".format(e))
+                print(msg)
+            log_error_to_sd(msg)
             time.sleep(2)
             continue
         

@@ -12,11 +12,11 @@ def load_config():
     Load configuration from JSON file.
 
     Priority:
-      1) ./config.json     (flash)
-      2) /sd/config.json   (if SD card present)
+      1) /sd/config.json   (if SD card present)
+      2) ./config.json     (flash)
     Returns dict (empty if nothing found or invalid).
     """
-    paths = ("config.json", "/sd/config.json")
+    paths = ("/sd/config.json", "config.json")
     for path in paths:
         try:
             with open(path) as f:
@@ -32,8 +32,6 @@ def load_config():
             return {}
     print("No config file found")
     return {}
-
-CONFIG = load_config()
 
 # =======================
 # ---- SD-CARD MOUNT ----
@@ -59,8 +57,6 @@ def mount_sd():
     except OSError as e:
         print(f"SD card not mounted ({e})  — continuing without SD") # Common causes: no card inserted, bad wiring, wrong format
         return None
-
-mount_sd()
 
 # =======================
 # ---- WIFI CONNECT -----
@@ -89,16 +85,6 @@ def _wifi_hard_reset():
         pass
     print("WiFi hard reset")
 
-wifi = _wifi_init()
-
-wifi.connect(WIFI_SSID, WIFI_PASSWORD)
-
-print("Connecting to Wifi", end="")
-while not wifi.isconnected():
-    print(".", end="")
-    time.sleep(1)
-print("\nConnected:", wifi.ifconfig())
-
 # =======================
 # ---- NTP SYNC ---------
 # =======================
@@ -112,8 +98,6 @@ def sync_time():
               "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*t))
     except Exception as e:
         print("NTP sync failed:", e)
-
-sync_time()
 
 # =======================
 # ---- MQTT CLIENT ------
@@ -226,7 +210,6 @@ def mqtt_client_create():
     c.set_last_will(TOPIC_STATUS, lwt_msg)
     return c
 
-client = mqtt_client_create()
 
 def mqtt_connect():
     global client
@@ -264,7 +247,27 @@ def mqtt_connect():
                 bg.client = client
             except Exception:
                 pass
-        
+# =======================
+# --- EXECUTE STARTUP ---
+# =======================
+mount_sd()
+# load config from flash or SD
+CONFIG = load_config()
+
+# connect to WiFi and sync time
+wifi = _wifi_init()
+wifi.connect(WIFI_SSID, WIFI_PASSWORD)
+
+print("Connecting to Wifi", end="")
+while not wifi.isconnected():
+    print(".", end="")
+    time.sleep(1)
+print("\nConnected:", wifi.ifconfig())
+
+sync_time()
+
+# connect to MQTT broker
+client = mqtt_client_create()
 mqtt_connect()
 print("Initial MQTT connection succeeded")
 

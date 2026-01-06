@@ -70,6 +70,23 @@ class AdaptiveThresholdDetector:
 
 
 # =======================================
+# Factory
+# =======================================
+DETECTOR_REGISTER = {
+    "zscore": ZScoreDetector,
+    "ewma": EWMADetector,
+    "adaptive_threshold": AdaptiveThresholdDetector,
+}
+
+
+def create_detector(name, **kwargs):
+    cls = DETECTOR_REGISTER.get(name)
+    if cls is None:
+        raise ValueError("Unknown detector: {}".format(name))
+    return cls(**kwargs)
+
+
+# =======================================
 # Beispielhafte Nutzung
 # =======================================
 if __name__ == "__main__":

@@ -11,6 +11,20 @@
     "password": "your-mqtt-password",
     "device_id": "ESP32-Sensor",
     "base_topic_root": "sensors/esp32"
+  },
+  "detector": {
+    "type": "zscore",
+    "zscore": {
+      "window_size": 90,
+      "threshold": 3
+    },
+    "ewma": {
+      "alpha": 0.1,
+      "threshold": 3
+    },
+    "adaptive_threshold": {
+      "window_size": 90,
+      "sensitivity": 2
+    }
   }
 }
-

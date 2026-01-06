@@ -277,3 +277,4 @@ bg.DEVICE_ID = DEVICE_ID
 bg.TOPIC_TELE = TOPIC_TELE
 bg.TOPIC_STATUS = TOPIC_STATUS
 bg.mqtt_connect = mqtt_connect
+bg.CONFIG = CONFIG

@@ -4,7 +4,7 @@ import dht, ssd1306
 from resources import get_cpu_usage, get_full_memory_info
 import boot_globals as bg
 import uerrno as errno
-from detectors import ZScoreDetector, EWMADetector, AdaptiveThresholdDetector
+from detectors import create_detector
 
 # setup dht22 and oled Display
 dht22 = dht.DHT22(Pin(25, Pin.IN))
@@ -14,6 +14,12 @@ oled = ssd1306.SSD1306_I2C(128, 64, i2c)
 # shutdown button
 shutdown_btn = Pin(13, Pin.IN, Pin.PULL_UP)
 shutdown_requested = False
+
+DETECTOR_KEYS = {
+    "zscore": ("temp_zscore_anomaly", "hum_zscore_anomaly"),
+    "ewma": ("temp_ewma_anomaly", "hum_ewma_anomaly"),
+    "adaptive_threshold": ("temp_adaptive_threshold_anomaly", "hum_adaptive_threshold_anomaly"),
+}
 
 def check_shutdown_button():
     """Check if shutdown button is pressed."""
@@ -94,21 +100,43 @@ def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
             print(msg)
         log_error_to_sd(msg)
 
+def load_detector_settings():
+    cfg = getattr(bg, "CONFIG", {}) or {}
+    det_cfg = cfg.get("detector", {})
+
+    # get detector type and params from config
+    det_type = det_cfg.get("type", None)
+    det_params = det_cfg.get(det_type, {}) or {}
+
+    return det_type, det_params
+
+def build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly):
+    anomalies = {
+        "temp_zscore_anomaly": False,
+        "temp_ewma_anomaly": False,
+        "temp_adaptive_threshold_anomaly": False,
+        "hum_zscore_anomaly": False,
+        "hum_ewma_anomaly": False,
+        "hum_adaptive_threshold_anomaly": False,
+    }
+    keys = DETECTOR_KEYS.get(detector_type)
+    if keys:
+        anomalies[keys[0]] = temp_anomaly
+        anomalies[keys[1]] = hum_anomaly
+    return anomalies
 
 # main loop
 last_read = 0
 debug=True
 print("Starting main programm loop with debugging={}".format(debug))
 
-# anomaly detectors (temperature stream)
-temp_zdet = ZScoreDetector(window_size=90, threshold=3)
-temp_ewma = EWMADetector(alpha=0.1, threshold=3)
-temp_adpt = AdaptiveThresholdDetector(window_size=90, sensitivity=2)
-
-# anomaly detectors (humidity stream)
-hum_zdet = ZScoreDetector(window_size=90, threshold=3)
-hum_ewma = EWMADetector(alpha=0.1, threshold=3)
-hum_adpt = AdaptiveThresholdDetector(window_size=90, sensitivity=2)
+detector_type, detector_params = load_detector_settings()
+try:
+    temp_det = create_detector(detector_type, **detector_params)
+    hum_det = create_detector(detector_type, **detector_params)
+except Exception as e:
+    print("Detector init failed: {}".format(e))
+print("Active detector:", detector_type)
 
 while True:
     # Shutdown button check
@@ -141,28 +169,15 @@ while True:
         mem = get_full_memory_info()
 
         # anomaly detection (temperature)
-        temp_zscore_anomaly = temp_zdet.update(temp)
-        temp_ewma_anomaly = temp_ewma.update(temp)
-        temp_adaptive_threshold_anomaly = temp_adpt.update(temp)
-
-        # anomaly detection (humidity)
-        hum_zscore_anomaly = hum_zdet.update(hum)
-        hum_ewma_anomaly = hum_ewma.update(hum)
-        hum_adaptive_threshold_anomaly = hum_adpt.update(hum)
+        temp_anomaly = temp_det.update(temp)
+        hum_anomaly = hum_det.update(hum)
+        anomalies = build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly)
 
         if debug:
-            if temp_zscore_anomaly:
-                print("Anomaly detected: temp_zscore temp={:.1f}C ts={}".format(temp, ts))
-            if temp_ewma_anomaly:
-                print("Anomaly detected: temp_ewma temp={:.1f}C ts={}".format(temp, ts))
-            if temp_adaptive_threshold_anomaly:
-                print("Anomaly detected: temp_adaptive_threshold temp={:.1f}C ts={}".format(temp, ts))
-            if hum_zscore_anomaly:
-                print("Anomaly detected: hum_zscore hum={:.1f}% ts={}".format(hum, ts))
-            if hum_ewma_anomaly:
-                print("Anomaly detected: hum_ewma hum={:.1f}% ts={}".format(hum, ts))
-            if hum_adaptive_threshold_anomaly:
-                print("Anomaly detected: hum_adaptive_threshold hum={:.1f}% ts={}".format(hum, ts))
+            if temp_anomaly:
+                print("Anomaly detected: temp_{} temp={:.1f}C ts={}".format(detector_type, temp, ts))
+            if hum_anomaly:
+                print("Anomaly detected: hum_{} hum={:.1f}% ts={}".format(detector_type, hum, ts))
         
         # oled
         oled.fill(0)
@@ -179,24 +194,12 @@ while True:
             "ts": time.localtime(),
             "temp_c": temp,
             "hum_pct": hum,
-            "temp_zscore_anomaly": temp_zscore_anomaly,
-            "temp_ewma_anomaly": temp_ewma_anomaly,
-            "temp_adaptive_threshold_anomaly": temp_adaptive_threshold_anomaly,
-            "hum_zscore_anomaly": hum_zscore_anomaly,
-            "hum_ewma_anomaly": hum_ewma_anomaly,
-            "hum_adaptive_threshold_anomaly": hum_adaptive_threshold_anomaly,
         }
+        payload.update(anomalies)
         bg.client.publish(bg.TOPIC_TELE, ujson.dumps(payload))
         
         # sd card log
-        log_to_sd(ts, temp, hum, cpu, mem, {
-            "temp_zscore_anomaly": temp_zscore_anomaly,
-            "temp_ewma_anomaly": temp_ewma_anomaly,
-            "temp_adaptive_threshold_anomaly": temp_adaptive_threshold_anomaly,
-            "hum_zscore_anomaly": hum_zscore_anomaly,
-            "hum_ewma_anomaly": hum_ewma_anomaly,
-            "hum_adaptive_threshold_anomaly": hum_adaptive_threshold_anomaly,
-        })
+        log_to_sd(ts, temp, hum, cpu, mem, anomalies)
 
         
         # debugging logs

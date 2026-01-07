@@ -1,17 +1,8 @@
 import os
 import time
 
+# central flag for activating debugging console logs
 DEBUG = True
-
-
-def set_debug(value):
-    global DEBUG
-    DEBUG = bool(value)
-
-
-def is_debug():
-    return DEBUG
-
 
 def _sd_available():
     try:

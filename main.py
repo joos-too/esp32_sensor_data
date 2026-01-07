@@ -229,7 +229,6 @@ while True:
             payload["event"] = "anomaly"
             payload["window_before"] = list(measurement_history)
             measurement_history = deque((), MEASUREMENTS_PER_WINDOW) # clear history
-            if debug: print(payload)
             bg.client.publish(bg.TOPIC_TELE, ujson.dumps(payload))
             post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
             ping_counter = 0

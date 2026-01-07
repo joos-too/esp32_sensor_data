@@ -26,25 +26,30 @@ class ZScoreDetector:
 # EWMA-Detector (Exponentially Weighted Moving Average)
 # =======================================
 class EWMADetector:
-    def __init__(self, alpha=0.2, threshold=3.0):
+    def __init__(self, alpha=0.2, threshold=3.0, min_samples=5):
         self.alpha = alpha
         self.threshold = threshold
+        self.min_samples = max(0, int(min_samples))
         self.ewma = None
         self.variance = 0.0
+        self.samples = 0
 
     def update(self, value):
         if self.ewma is None:
             self.ewma = value
             self.variance = 0.0
+            self.samples = 1
             return False
 
         # Use the previous EWMA as the baseline to avoid shrinking the residual.
         diff = value - self.ewma
         self.variance = (1 - self.alpha) * (self.variance + self.alpha * diff * diff)
         std = math.sqrt(self.variance)
-        is_anomaly = abs(diff) > self.threshold * std if std > 0 else False
         self.ewma += self.alpha * diff
-        return is_anomaly
+        self.samples += 1
+        if self.samples <= self.min_samples:
+            return False
+        return abs(diff) > self.threshold * std if std > 0 else False
 
 
 # =======================================

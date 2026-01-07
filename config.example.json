@@ -20,7 +20,8 @@
     },
     "ewma": {
       "alpha": 0.1,
-      "threshold": 3
+      "threshold": 3,
+      "min_samples": 5
     },
     "adaptive_threshold": {
       "window_size": 90,

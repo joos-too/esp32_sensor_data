@@ -245,10 +245,6 @@ while True:
                 e, wifi_connected, wifi_status, wifi_ip
             )
         log(msg, level="ERROR")
-        try:
-            bg.mqtt_reset_client()
-        except Exception as reset_err:
-            log("MQTT reset failed:", reset_err, level="ERROR")
         bg.mqtt_connect()
         time.sleep(2)
     except Exception as e:

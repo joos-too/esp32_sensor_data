@@ -26,7 +26,7 @@ def _append_to_sd(line, ts_tuple):
         with open(filepath, "a") as f:
             f.write(line + "\n")
     except Exception:
-        pass
+        log("SD write error:", level="ERROR", to_sd=False)
 
 
 def log(*args, sep=" ", end="\n", to_sd=True, level="INFO"):

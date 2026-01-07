@@ -89,7 +89,7 @@ def wifi_hard_reset():
     try:
         wifi.active(False)
     except Exception as e:
-        log("WiFi hard reset failed:", e, level="ERROR")
+        log("WiFi deactivation failed:", e, level="ERROR")
     wifi = wifi_init()
     try:
         bg.wifi = wifi
@@ -101,10 +101,9 @@ def wifi_hard_reset():
 wifi = wifi_init()
 wifi.connect(WIFI_SSID, WIFI_PASSWORD)
 
-log("Connecting to Wifi", end="")
+log("Connecting to Wifi...")
 while not wifi.isconnected():
-    log(".", end="", to_sd=False)
-    time.sleep(1)
+    machine.idle()
 log("Connected:", wifi.ifconfig())
 
 
@@ -116,9 +115,7 @@ def sync_time():
     try:
         ntptime.host = "pool.ntp.org"
         ntptime.settime()  # sets RTC to UTC
-        t = time.localtime()
-        log("Time synced:",
-            "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*t))
+        log("Time synced")
     except Exception as e:
         log("NTP sync failed:", e, level="ERROR")
 
@@ -155,13 +152,12 @@ def wifi_status_name(status):
     }
     return names.get(status, str(status))
 
-# TODO inspect
 def wifi_reconnect(timeout_s=30):
     if wifi.isconnected():
         return True
 
     start = time.ticks_ms()
-    attempts = 0
+    attempts = 1
     while time.ticks_diff(time.ticks_ms(), start) < timeout_s * 1000:
         status = wifi.status()
         if status == getattr(network, "STAT_CONNECTING", 1001):
@@ -170,25 +166,26 @@ def wifi_reconnect(timeout_s=30):
 
         try:
             wifi.disconnect()
-        except Exception:
-            pass
+        except Exception as e:
+            log("Wifi disconnect failed:", e, level="ERROR", to_sd=False)
+            return False
 
         try:
             wifi.active(False)
             time.sleep(0.2)
             wifi.active(True)
             wifi.config(dhcp_hostname=WIFI_HOSTNAME)
-        except Exception:
-            pass
+        except Exception as e:
+            log("Wifi restart failed:", e, level="ERROR", to_sd=False)
+            return False
 
         log("WiFi reconnecting; status={}".format(wifi_status_name(status)))
         wifi.connect(WIFI_SSID, WIFI_PASSWORD)
 
-        # Wait for connect
-        for _ in range(10):
-            if wifi.isconnected():
-                return True
-            time.sleep(1)
+        # Wait for connection
+        if wifi.isconnected():
+            return True
+        time.sleep(5)
 
         attempts += 1
         status = wifi.status()
@@ -198,7 +195,7 @@ def wifi_reconnect(timeout_s=30):
                 getattr(network, "STAT_NO_AP_FOUND", 201),
         ):
             log(
-                "WiFi reconnect failed; status={}".format(
+                "WiFi reconnect not working; status={}".format(
                     wifi_status_name(status)
                 ),
                 level="ERROR",
@@ -234,43 +231,44 @@ client = mqtt_client_create()
 
 def mqtt_reset_client():
     global client
-    try:
-        if client is not None:
-            try:
-                client.disconnect()
-            except Exception:
-                pass
-            try:
-                sock = getattr(client, "sock", None)
-                if sock is not None:
-                    sock.close()
-            except Exception:
-                pass
-    except Exception:
-        pass
-    client = mqtt_client_create()
-    try:
-        bg.client = client
-    except Exception:
-        pass
+    # cleanup previous client
+    if client is not None:
+        try:
+            client.disconnect()
+        except Exception as e:
+            log("MQTT disconnect failed:", e, level="ERROR", to_sd=False)
+        try:
+            sock = getattr(client, "sock", None)
+            if sock is not None:
+                sock.close()
+        except Exception as e:
+            log("Socket couldn't be closed:", e, level="ERROR", to_sd=False)
     gc.collect()
 
+    # create new client
+    try:
+        client = mqtt_client_create()
+        bg.client = client
+        log("MQTT Client reset succeeded")
+    except Exception as e:
+        log("MQTT Client couldn't be created:", e, level="ERROR", to_sd=False)
 
-def mqtt_connect():
+
+def mqtt_connect(timeout=10):
     global client
     backoff_s = 2
     while True:
         try:
             if not wifi.isconnected():
                 log("WiFi disconnected; reconnecting...")
-                if not wifi_reconnect(timeout_s=30):
-                    log("WiFi reconnect failed; status={}".format(
+                if not wifi_reconnect():
+                    log("WiFi reconnect failed after multiple attempts; status={}".format(
                         wifi_status_name(wifi.status())
                     ), level="ERROR")
                     time.sleep(backoff_s)
                     backoff_s = min(backoff_s * 2, 30)
                     continue
-            client.connect(timeout=5)
+            client.connect(timeout=timeout)
             online = ujson.dumps({"device_id": DEVICE_ID, "status": "online"})
             client.publish(TOPIC_STATUS, online, retain=True)
             log("MQTT connected:", MQTT_BROKER)

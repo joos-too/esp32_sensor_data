@@ -284,9 +284,9 @@ while True:
             print(msg)
         log_error_to_sd(msg)
         try:
-            bg.client.disconnect()
-        except Exception:
-            print("MQTT disconnect failed:", e)
+            bg.mqtt_reset_client()
+        except Exception as reset_err:
+            print("MQTT reset failed:", reset_err)
         bg.mqtt_connect()
         time.sleep(2)
     except Exception as e:

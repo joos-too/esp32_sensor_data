@@ -1,4 +1,4 @@
-import os, time, network, ntptime, ssl, ubinascii, ujson, esp32, machine
+import os, time, network, ntptime, ssl, ubinascii, ujson, esp32, machine, gc
 import uerrno as errno
 from machine import Pin, SDCard
 from umqtt.simple import MQTTClient
@@ -184,8 +184,10 @@ def wifi_reconnect(timeout_s=30):
         wifi.connect(WIFI_SSID, WIFI_PASSWORD)
 
         # Wait for connect
-        if wifi.isconnected():
-            return True
+        for _ in range(10):
+            if wifi.isconnected():
+                return True
+            time.sleep(1)
 
         attempts += 1
         status = wifi.status()
@@ -228,6 +230,29 @@ def mqtt_client_create():
 
 client = mqtt_client_create()
 
+def mqtt_reset_client():
+    global client
+    try:
+        if client is not None:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+            try:
+                sock = getattr(client, "sock", None)
+                if sock is not None:
+                    sock.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    client = mqtt_client_create()
+    try:
+        bg.client = client
+    except Exception:
+        pass
+    gc.collect()
+
 
 def mqtt_connect():
     global client
@@ -256,15 +281,7 @@ def mqtt_connect():
                 print("MQTT connect failed:", e)
             time.sleep(backoff_s)
             backoff_s = min(backoff_s * 2, 30)
-            try:
-                client.disconnect()
-            except Exception:
-                pass
-            client = mqtt_client_create()
-            try:
-                bg.client = client
-            except Exception:
-                pass
+            mqtt_reset_client()
 
 
 mqtt_connect()
@@ -279,4 +296,5 @@ bg.DEVICE_ID = DEVICE_ID
 bg.TOPIC_TELE = TOPIC_TELE
 bg.TOPIC_STATUS = TOPIC_STATUS
 bg.mqtt_connect = mqtt_connect
+bg.mqtt_reset_client = mqtt_reset_client
 bg.CONFIG = CONFIG

@@ -1,5 +1,6 @@
 # ressource monitor functions
 import gc, esp32
+from logger import log
 
 _last_total = None
 _last_runtime = {}
@@ -64,7 +65,7 @@ def get_cpu_usage():
 
     except Exception as e:
         # debugging
-        print(e)
+        log(e, level="ERROR")
         usage = {"mp_task": -1, "core0": -1, "core1": -1, "total": -1}
 
     return usage

@@ -89,24 +89,3 @@ def create_detector(name, **kwargs):
     if cls is None:
         raise ValueError("Unknown detector: {}".format(name))
     return cls(**kwargs)
-
-
-# =======================================
-# Beispielhafte Nutzung
-# =======================================
-if __name__ == "__main__":
-    zdet = ZScoreDetector(window_size=5, threshold=3)
-    ewma = EWMADetector(alpha=0.1, threshold=3)
-    adpt = AdaptiveThresholdDetector(window_size=5, sensitivity=2)
-
-    # Beispiel-Datenstrom (z. B. Temperaturwerte)
-    data = [22.0, 22.1, 22.2, 22.3, 22.2, 25.0, 22.1, 22.5, 21.9, 40.0, 21.8]
-
-    for v in data:
-        print("v =", v)
-        if zdet.update(v):
-            print("Z-Score Anomalie bei:", v)
-        if ewma.update(v):
-            print("EWMA Anomalie bei:", v)
-        if adpt.update(v):
-            print("Adaptive Schwelle Anomalie bei:", v)

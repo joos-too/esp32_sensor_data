@@ -6,6 +6,7 @@ from resources import get_cpu_usage, get_full_memory_info
 import boot_globals as bg
 import uerrno as errno
 from detectors import create_detector
+from logger import log
 
 # setup dht22 and oled Display
 dht22 = dht.DHT22(Pin(25, Pin.IN))
@@ -35,38 +36,19 @@ def safe_shutdown():
     """Flush, unmount SD, and optionally deep sleep."""
     global shutdown_requested
     shutdown_requested = True
-    print("Shutdown button pressed, preparing safe power-down")
+    log("Shutdown button pressed, preparing safe power-down")
 
     try:
         os.umount("/sd")
-        print("SD unmounted safely.")
+        log("SD unmounted safely.", to_sd=False)
     except Exception as e:
-        print("SD unmount error:", e)
+        log("SD unmount error:", e, level="ERROR", to_sd=False)
     
     # "turn off" oled screen
     oled.fill(0)
     oled.show()
     
-    print("Device can now be powered off safely.")
-
-def log_error_to_sd(message):
-    """
-    Append an error message to a daily log file on the SD card.
-    Uses one file per day to avoid unbounded growth.
-    """
-    if "sd" not in os.listdir("/"):
-        return
-
-    try:
-        t = time.localtime()
-        date_str = "{:04d}-{:02d}-{:02d}".format(*t)
-        ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*t)
-        filepath = "/sd/errors_{}.log".format(date_str)
-        with open(filepath, "a") as f:
-            f.write("{} | {}\n".format(ts, message))
-    except Exception as e:
-        if debug:
-            print("SD error-log write error:", e)
+    log("Device can now be powered off safely.", to_sd=False)
 
 # sd logger
 def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
@@ -74,10 +56,8 @@ def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
     Logs a single measurement to daily CSV file on SD card.
     Creates a new file each day with header row if it doesn't exist.
     """
-    global debug
-    
     if "sd" not in os.listdir("/"):
-        print("No SD filesystem mounted.")
+        log("No SD filesystem mounted.", to_sd=False)
         return
 
     try:
@@ -100,10 +80,7 @@ def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
             f.write(line + "\n")
 
     except Exception as e:
-        msg = "SD write error: {}".format(e)
-        if debug:
-            print(msg)
-        log_error_to_sd(msg)
+        log("SD write error: {}".format(e), level="ERROR", to_sd=False)
 
 def load_detector_settings():
     cfg = getattr(bg, "CONFIG", {}) or {}
@@ -148,28 +125,23 @@ def build_measurement_payload(ts_tuple, temp, hum, anomalies):
     payload.update(anomalies)
     return payload
 
-# main loop
 last_read = 0
-debug=True
-print("Starting main programm loop with debugging={}".format(debug))
+log("Starting main programm")
 
 detector_type, detector_params = load_detector_settings()
 try:
     temp_det = create_detector(detector_type, **detector_params)
     hum_det = create_detector(detector_type, **detector_params)
 except Exception as e:
-    msg = "Detector init failed: {}".format(e)
-    if debug:
-        print(msg)
-    log_error_to_sd(msg)
-if debug:
-    print("Active detector:", detector_type)
-    print("Detector params:", detector_params)
+    log("Detector init failed: {}".format(e), level="ERROR")
+log("Active detector:", detector_type)
+log("Detector params:", detector_params)
 
 measurement_history = deque((), MEASUREMENTS_PER_WINDOW)
 post_anomaly_remaining = 0
 ping_counter = 0
 
+# main loop
 while True:
     # Shutdown button check
     if check_shutdown_button():
@@ -177,10 +149,9 @@ while True:
         break
     
     # debugging logs
-    if debug:
-        now = time.ticks_ms()
-        print("delta_t =", time.ticks_diff(now, last_read))
-        last_read = now
+    now = time.ticks_ms()
+    log("delta_t =", time.ticks_diff(now, last_read))
+    last_read = now
     
     try:
         # sensor measurements every ~2s
@@ -191,10 +162,7 @@ while True:
             ts_tuple = time.localtime()
             ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*ts_tuple)
         except OSError as e:
-            msg = "DHT read error: {}".format(e)
-            if debug:
-                print(msg)
-            log_error_to_sd(msg)
+            log("DHT read error: {}".format(e), level="ERROR")
             time.sleep(2)
             continue
         
@@ -207,12 +175,11 @@ while True:
         hum_anomaly = hum_det.update(hum)
         anomalies = build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly)
 
-        if debug:
-            if temp_anomaly:
-                print("Anomaly detected: temp_{} temp={:.1f}C ts={}".format(detector_type, temp, ts))
-            if hum_anomaly:
-                print("Anomaly detected: hum_{} hum={:.1f}% ts={}".format(detector_type, hum, ts))
-        
+        if temp_anomaly:
+            log("Anomaly detected: temp_{} temp={:.1f}C ts={}".format(detector_type, temp, ts))
+        if hum_anomaly:
+            log("Anomaly detected: hum_{} hum={:.1f}% ts={}".format(detector_type, hum, ts))
+
         # oled
         oled.fill(0)
         oled.text(f"Temp: {temp:.1f}C", 0, 0)
@@ -224,7 +191,7 @@ while True:
         
         # MQTT publish only on anomaly windows, otherwise send periodic ping.
         if temp_anomaly or hum_anomaly:
-            if debug: print("Anomaly detected, publishing to MQTT...")
+            log("Anomaly detected, publishing to MQTT...")
             payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
             payload["event"] = "anomaly"
             payload["window_before"] = list(measurement_history)
@@ -251,10 +218,8 @@ while True:
 
         
         # debugging logs
-        if debug:
-            print(f"{ts} Temp:{temp:.1f}C Hum:{hum:.1f}% MP_CPU:{cpu['mp_task']:.1f}% MP_RAM:{mem['mp_used_kb']}/{mem['mp_total_kb']}KB IDF_RAM:{mem['idf_total_kb']-mem['idf_free_kb']}/{mem['idf_total_kb']}KB CPU_TOTAL:{cpu['total']:.1f}% CPU0:{cpu['core0']:.1f}% CPU1:{cpu['core1']:.1f}%")
-
-        time.sleep(1.6)
+        log(f"{ts} Temp:{temp:.1f}C Hum:{hum:.1f}% MP_CPU:{cpu['mp_task']:.1f}% MP_RAM:{mem['mp_used_kb']}/{mem['mp_total_kb']}KB IDF_RAM:{mem['idf_total_kb']-mem['idf_free_kb']}/{mem['idf_total_kb']}KB CPU_TOTAL:{cpu['total']:.1f}% CPU0:{cpu['core0']:.1f}% CPU1:{cpu['core1']:.1f}%", to_sd=False)
+        time.sleep(1.5)
     except OSError as e:
         # Network/MQTT error, try to get error code
         err = e.args[0] if e.args else None
@@ -266,7 +231,7 @@ while True:
             wifi_status = bg.wifi.status()
             wifi_ip = bg.wifi.ifconfig()
         except Exception:
-            print("WiFi status fetch failed:", e)
+            log("WiFi status fetch failed:", e, level="ERROR")
             wifi_connected = None
             wifi_status = None
             wifi_ip = None
@@ -279,18 +244,13 @@ while True:
             msg = "MQTT/Network/OS error: {} wifi_connected={} wifi_status={} ip={}".format(
                 e, wifi_connected, wifi_status, wifi_ip
             )
-        if debug:
-            print(msg)
-        log_error_to_sd(msg)
+        log(msg, level="ERROR")
         try:
             bg.mqtt_reset_client()
         except Exception as reset_err:
-            print("MQTT reset failed:", reset_err)
+            log("MQTT reset failed:", reset_err, level="ERROR")
         bg.mqtt_connect()
         time.sleep(2)
     except Exception as e:
-        # catch-all to prevent crashes
-        msg = "Unexpected error: {}".format(e)
-        if debug:
-            print(msg)
-        log_error_to_sd(msg)
+        # catch-all
+        log("Unexpected error: {}".format(e), level="ERROR")

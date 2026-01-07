@@ -10,7 +10,8 @@
     "user": "esp32",
     "password": "your-mqtt-password",
     "device_id": "ESP32-Sensor",
-    "base_topic_root": "sensors/esp32"
+    "base_topic_root": "sensors/esp32",
+    "keepalive": 60
   },
   "detector": {
     "type": "zscore",

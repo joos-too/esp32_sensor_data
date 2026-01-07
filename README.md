@@ -11,17 +11,16 @@ Kompakte Wetterstation auf dem ESP32 mit MicroPython: liest einen DHT22 aus, zei
 
 ## Ablauf beim Start (`boot.py`)
 1) SD-Karte auf `/sd` einbinden (SPI-Pins siehe oben); weiterlaufen, falls keine Karte steckt.
-2) WLAN verbinden (SSID/Passwort in `boot.py` hinterlegt) und Hostname setzen.
-3) Uhrzeit via NTP (`pool.ntp.org`) synchronisieren.
-4) MQTT-Client mit TLS initialisieren, Status-Topic (`.../status`) mit Last-Will registrieren und verbinden.
-5) Globale Objekte/Topics für die Hauptschleife exportieren.
+2) WLAN-Interface aktivieren und Hostname setzen (Verbindung wird von `mqtt_as` in `main.py` aufgebaut).
+3) Konfiguration laden sowie MQTT-IDs/Topics für die Hauptschleife exportieren.
 
 ## Laufzeitlogik (`main.py`)
 - Liest den DHT22 etwa alle 2 Sekunden, formatiert Timestamp aus RTC.
 - Zeigt Temperatur, Luftfeuchte sowie CPU- und RAM-Auslastung (MicroPython- und IDF-Daten aus `lib/resources.py`) auf dem OLED an.
 - Sendet Telemetrie als JSON an `sensors/esp32/ESP32-Sensor/telemetry`.
 - Schreibt Messungen zusätzlich als CSV (pro Tag eine Datei) nach `/sd/telemetry_YYYY-MM-DD.csv`.
-- Fehlerbehandlung: bei MQTT-/Netzwerkfehler wird die Verbindung neu aufgebaut.
+- MQTT/WiFi läuft asynchron via `mqtt_as` (asyncio), inkl. automatischer Reconnects und Keepalive.
+- Uhrzeit wird nach MQTT-Connect per NTP synchronisiert.
 - Shutdown: bei Tasterdruck OLED löschen, SD sauber aushängen und danach sicheres Abschalten ermöglichen.
 
 ### MQTT-Nachrichten
@@ -29,7 +28,6 @@ Kompakte Wetterstation auf dem ESP32 mit MicroPython: liest einen DHT22 aus, zei
 - Telemetrie (`.../telemetry`): `{"device_id":"ESP32-Sensor","ts":[Y,M,D,h,m,s,wday,yday],"temp_c":<float>,"hum_pct":<float>}`
 
 ## Dateien
-- `boot.py`: SD-Mount, WLAN, NTP, MQTT-Setup.
-- `main.py`: Sensorauslese, Anzeige, MQTT-Publish, SD-Logging, Shutdown-Handling.
+- `boot.py`: SD-Mount, Config-Load, WLAN-Hostname, MQTT-IDs/Topics.
+- `main.py`: Sensorauslese, Anzeige, MQTT-Publish via `mqtt_as`, SD-Logging, Shutdown-Handling.
 - `lib/resources.py`: Helfer für CPU-/Speicherstatistiken (benötigt Custom-Firmware).
-

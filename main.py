@@ -310,6 +310,7 @@ async def sensor_loop(client):
                 log("Anomaly detected, publishing to MQTT...")
                 payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
                 payload["event"] = "anomaly"
+                payload["window_before"] = list(measurement_history)
                 measurement_history = deque((), MEASUREMENTS_PER_WINDOW)  # clear history
                 await client.publish(TOPIC_TELE, ujson.dumps(payload))
                 post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
@@ -344,8 +345,7 @@ async def main():
     except Exception as e:
         log("MQTT client init failed:", e, level="ERROR")
         return
-    await client.connect()
-    # await connect_with_backoff(client)
+    await connect_with_backoff(client)
     await sensor_loop(client)
 
 

@@ -215,7 +215,6 @@ def setup_mqtt_config():
         True,
         0,
     )
-    config["connect_coro"] = on_mqtt_connect
 
 
 async def connect_with_backoff(client):
@@ -224,7 +223,7 @@ async def connect_with_backoff(client):
         try:
             await client.connect()
             return
-        except Exception as e:
+        except OSError as e:
             log("MQTT connect failed:", e, level="ERROR")
             await asyncio.sleep(backoff_s)
             backoff_s = min(backoff_s * 2, 30)
@@ -245,7 +244,7 @@ def init_detectors():
 
 
 async def sensor_loop(client):
-    last_read = 0
+    last_read = None
     measurement_history = deque((), MEASUREMENTS_PER_WINDOW)
     post_anomaly_remaining = 0
 
@@ -262,7 +261,8 @@ async def sensor_loop(client):
 
         # debugging logs
         now = time.ticks_ms()
-        log("delta_t =", time.ticks_diff(now, last_read))
+        if last_read:
+            log("delta_t =", time.ticks_diff(now, last_read))
         last_read = now
 
         try:
@@ -331,7 +331,7 @@ async def sensor_loop(client):
                 f"{ts} Temp:{temp:.1f}C Hum:{hum:.1f}% MP_CPU:{cpu['mp_task']:.1f}% MP_RAM:{mem['mp_used_kb']}/{mem['mp_total_kb']}KB IDF_RAM:{mem['idf_total_kb'] - mem['idf_free_kb']}/{mem['idf_total_kb']}KB CPU_TOTAL:{cpu['total']:.1f}% CPU0:{cpu['core0']:.1f}% CPU1:{cpu['core1']:.1f}%",
                 to_sd=False,
             )
-            await asyncio.sleep_ms(1500)
+            await asyncio.sleep_ms(1520)
         except Exception as e:
             log("Unexpected error: {}".format(e), level="ERROR")
             await asyncio.sleep(2)
@@ -346,6 +346,7 @@ async def main():
         log("MQTT client init failed:", e, level="ERROR")
         return
     await connect_with_backoff(client)
+    await on_mqtt_connect(client)
     await sensor_loop(client)
 
 

@@ -243,7 +243,7 @@ def init_detectors():
     return detector_type, temp_det, hum_det
 
 
-async def sensor_loop(client):
+async def sensor_loop(client, period_ms=2000):
     last_read = None
     measurement_history = deque((), MEASUREMENTS_PER_WINDOW)
     post_anomaly_remaining = 0
@@ -259,8 +259,9 @@ async def sensor_loop(client):
                 log("MQTT disconnect failed:", e, level="ERROR", to_sd=False)
             return
 
-        # debugging logs
+        # time management
         now = time.ticks_ms()
+        next_read = time.ticks_add(now, period_ms)
         if last_read:
             log("delta_t =", time.ticks_diff(now, last_read))
         last_read = now
@@ -331,7 +332,14 @@ async def sensor_loop(client):
                 f"{ts} Temp:{temp:.1f}C Hum:{hum:.1f}% MP_CPU:{cpu['mp_task']:.1f}% MP_RAM:{mem['mp_used_kb']}/{mem['mp_total_kb']}KB IDF_RAM:{mem['idf_total_kb'] - mem['idf_free_kb']}/{mem['idf_total_kb']}KB CPU_TOTAL:{cpu['total']:.1f}% CPU0:{cpu['core0']:.1f}% CPU1:{cpu['core1']:.1f}%",
                 to_sd=False,
             )
-            await asyncio.sleep_ms(1520)
+            now = time.ticks_ms()
+            remaining = time.ticks_diff(next_read, now)
+            if remaining > 0:
+                await asyncio.sleep_ms(remaining)
+                next_read = time.ticks_add(next_read, period_ms)
+            else:
+                # Overran the period; reschedule from now to avoid drift.
+                next_read = time.ticks_add(now, period_ms)
         except Exception as e:
             log("Unexpected error: {}".format(e), level="ERROR")
             await asyncio.sleep(2)

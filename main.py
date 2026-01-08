@@ -244,7 +244,6 @@ def init_detectors():
 
 
 async def sensor_loop(client, period_ms=2000):
-    last_read = None
     measurement_history = deque((), MEASUREMENTS_PER_WINDOW)
     post_anomaly_remaining = 0
 
@@ -259,85 +258,79 @@ async def sensor_loop(client, period_ms=2000):
                 log("MQTT disconnect failed:", e, level="ERROR", to_sd=False)
             return
 
+        # sensor measurements every ~2s
+        now = time.ticks_ms()
+        next_read = time.ticks_add(now, period_ms)
         try:
-            # sensor measurements every ~2s
-            now = time.ticks_ms()
+            dht22.measure()
+            temp = round(dht22.temperature(), 1)
+            hum = round(dht22.humidity(), 1)
+            ts_tuple = time.localtime()
+            ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*ts_tuple)
+        except OSError as e:
+            log("DHT read error: {}".format(e), level="ERROR")
+
+        # get system stats
+        cpu = get_cpu_usage()
+        mem = get_full_memory_info()
+
+        if temp_det is None or hum_det is None:
+            temp_anomaly = False
+            hum_anomaly = False
+        else:
+            # anomaly detection (temperature)
+            temp_anomaly = temp_det.update(temp)
+            hum_anomaly = hum_det.update(hum)
+        anomalies = build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly)
+
+        if temp_anomaly:
+            log("Anomaly detected: temp_{} temp={:.1f}C ts={}".format(detector_type, temp, ts))
+        if hum_anomaly:
+            log("Anomaly detected: hum_{} hum={:.1f}% ts={}".format(detector_type, hum, ts))
+
+        # oled
+        oled.fill(0)
+        oled.text(f"Temp: {temp:.1f}C", 0, 0)
+        oled.text(f"Hum:  {hum:.1f}%", 0, 10)
+        oled.text("MP Resources", 0, 30)
+        oled.text(f"CPU: {cpu['mp_task']:.1f}%", 0, 40)
+        oled.text(f"RAM: {mem['mp_used_kb']}/{mem['mp_total_kb']}KB", 0, 50)
+        oled.show()
+
+        # MQTT publish only on anomaly windows, otherwise keep history.
+        if temp_anomaly or hum_anomaly:
+            log("Anomaly detected, publishing to MQTT...")
+            payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
+            payload["event"] = "anomaly"
+            payload["window_before"] = list(measurement_history)
+            measurement_history = deque((), MEASUREMENTS_PER_WINDOW)  # clear history
+            await client.publish(TOPIC_TELE, ujson.dumps(payload))
+            post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
+        elif post_anomaly_remaining > 0:
+            payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
+            payload["event"] = "anomaly_followup"
+            await client.publish(TOPIC_TELE, ujson.dumps(payload))
+            post_anomaly_remaining -= 1
+        else:
+            measurement_entry = build_measurement_entry(ts_tuple, temp, hum)
+            measurement_history.append(measurement_entry)
+
+        # sd card log
+        log_to_sd(ts, temp, hum, cpu, mem, anomalies)
+
+        # debugging logs
+        log(
+            f"{ts} Temp:{temp:.1f}C Hum:{hum:.1f}% MP_CPU:{cpu['mp_task']:.1f}% MP_RAM:{mem['mp_used_kb']}/{mem['mp_total_kb']}KB IDF_RAM:{mem['idf_total_kb'] - mem['idf_free_kb']}/{mem['idf_total_kb']}KB CPU_TOTAL:{cpu['total']:.1f}% CPU0:{cpu['core0']:.1f}% CPU1:{cpu['core1']:.1f}%",
+            to_sd=False,
+        )
+        now = time.ticks_ms()
+        remaining = time.ticks_diff(next_read, now)
+        if remaining > 0:
+            await asyncio.sleep_ms(remaining)
+            next_read = time.ticks_add(next_read, period_ms)
+        else:
+            # Overran the period; reschedule from now to avoid drift.
             next_read = time.ticks_add(now, period_ms)
-            try:
-                dht22.measure()
-                temp = round(dht22.temperature(), 1)
-                hum = round(dht22.humidity(), 1)
-                ts_tuple = time.localtime()
-                ts = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*ts_tuple)
-            except OSError as e:
-                log("DHT read error: {}".format(e), level="ERROR")
-                await asyncio.sleep(2)
-                continue
-
-            # get system stats
-            cpu = get_cpu_usage()
-            mem = get_full_memory_info()
-
-            if temp_det is None or hum_det is None:
-                temp_anomaly = False
-                hum_anomaly = False
-            else:
-                # anomaly detection (temperature)
-                temp_anomaly = temp_det.update(temp)
-                hum_anomaly = hum_det.update(hum)
-            anomalies = build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly)
-
-            if temp_anomaly:
-                log("Anomaly detected: temp_{} temp={:.1f}C ts={}".format(detector_type, temp, ts))
-            if hum_anomaly:
-                log("Anomaly detected: hum_{} hum={:.1f}% ts={}".format(detector_type, hum, ts))
-
-            # oled
-            oled.fill(0)
-            oled.text(f"Temp: {temp:.1f}C", 0, 0)
-            oled.text(f"Hum:  {hum:.1f}%", 0, 10)
-            oled.text("MP Resources", 0, 30)
-            oled.text(f"CPU: {cpu['mp_task']:.1f}%", 0, 40)
-            oled.text(f"RAM: {mem['mp_used_kb']}/{mem['mp_total_kb']}KB", 0, 50)
-            oled.show()
-
-            # MQTT publish only on anomaly windows, otherwise keep history.
-            if temp_anomaly or hum_anomaly:
-                log("Anomaly detected, publishing to MQTT...")
-                payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
-                payload["event"] = "anomaly"
-                payload["window_before"] = list(measurement_history)
-                measurement_history = deque((), MEASUREMENTS_PER_WINDOW)  # clear history
-                await client.publish(TOPIC_TELE, ujson.dumps(payload))
-                post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
-            elif post_anomaly_remaining > 0:
-                payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
-                payload["event"] = "anomaly_followup"
-                await client.publish(TOPIC_TELE, ujson.dumps(payload))
-                post_anomaly_remaining -= 1
-            else:
-                measurement_entry = build_measurement_entry(ts_tuple, temp, hum)
-                measurement_history.append(measurement_entry)
-
-            # sd card log
-            log_to_sd(ts, temp, hum, cpu, mem, anomalies)
-
-            # debugging logs
-            log(
-                f"{ts} Temp:{temp:.1f}C Hum:{hum:.1f}% MP_CPU:{cpu['mp_task']:.1f}% MP_RAM:{mem['mp_used_kb']}/{mem['mp_total_kb']}KB IDF_RAM:{mem['idf_total_kb'] - mem['idf_free_kb']}/{mem['idf_total_kb']}KB CPU_TOTAL:{cpu['total']:.1f}% CPU0:{cpu['core0']:.1f}% CPU1:{cpu['core1']:.1f}%",
-                to_sd=False,
-            )
-            now = time.ticks_ms()
-            remaining = time.ticks_diff(next_read, now)
-            if remaining > 0:
-                await asyncio.sleep_ms(remaining)
-                next_read = time.ticks_add(next_read, period_ms)
-            else:
-                # Overran the period; reschedule from now to avoid drift.
-                next_read = time.ticks_add(now, period_ms)
-        except Exception as e:
-            log("Unexpected error: {}".format(e), level="ERROR")
-            await asyncio.sleep(2)
 
 
 async def main():

@@ -178,11 +178,25 @@ def setup_mqtt_config():
     config["ssid"] = wifi_cfg.get("ssid")
     config["wifi_pw"] = wifi_cfg.get("password")
     config["server"] = MQTT_BROKER
-    mqtt_port = mqtt_cfg.get("port", 8883)
+    mqtt_ssl = mqtt_cfg.get("ssl", False)
+    if isinstance(mqtt_ssl, str):
+        mqtt_ssl = mqtt_ssl.strip().lower() in ("1", "true", "yes", "on")
+    mqtt_ssl = bool(mqtt_ssl)
+    config["ssl"] = mqtt_ssl
+    if mqtt_ssl:
+        config["ssl_params"] = {
+            "server_hostname": MQTT_BROKER,
+            "cert_reqs": ssl.CERT_NONE,
+        }
+    else:
+        config["ssl_params"] = {}
+
+    default_port = 8883 if mqtt_ssl else 1883
+    mqtt_port = mqtt_cfg.get("port", default_port)
     try:
         config["port"] = int(mqtt_port)
     except (TypeError, ValueError):
-        config["port"] = 8883
+        config["port"] = default_port
     config["user"] = mqtt_cfg.get("user", "esp32")
     config["password"] = mqtt_cfg.get("password") or ""
 
@@ -195,12 +209,6 @@ def setup_mqtt_config():
     except (TypeError, ValueError):
         config["keepalive"] = 60
 
-    # TODO try wihtout ssl
-    config["ssl"] = True
-    config["ssl_params"] = {
-        "server_hostname": MQTT_BROKER,
-        "cert_reqs": ssl.CERT_NONE,
-    }
     config["will"] = (
         TOPIC_STATUS,
         ujson.dumps({"device_id": DEVICE_ID, "status": "offline"}),

@@ -1,13 +1,13 @@
 # ESP32 Sensor Projekt
 
-Kompakte Wetterstation auf dem ESP32 mit MicroPython: liest einen DHT22 aus, zeigt Werte auf einem SSD1306-OLED, schickt Messungen per MQTT (TLS/Port 8883) und loggt parallel auf SD-Karte. Für CPU- und RAM-Infos wird eine MicroPython-Firmware mit `esp32.idf_task_info` benötigt (siehe [MicroPython Doku](https://docs.micropython.org/en/latest/library/esp32.html#esp32.idf_task_info) und CustomFirmware.MD).
+Kompakte Wetterstation auf dem ESP32 mit MicroPython: liest einen DHT22 aus, zeigt Werte auf einem SSD1306-OLED, schickt Messungen per MQTT (Standard ohne TLS auf Port 1883; optional TLS/8883) und loggt parallel auf SD-Karte. Für CPU- und RAM-Infos wird eine MicroPython-Firmware mit `esp32.idf_task_info` benötigt (siehe [MicroPython Doku](https://docs.micropython.org/en/latest/library/esp32.html#esp32.idf_task_info) und CustomFirmware.MD).
 
 ## Hardware / Pinbelegung
 - DHT22: Daten an GPIO 25 (Pin als Eingang).
 - OLED (SSD1306, 128x64) via SoftI2C: SCL an GPIO 32, SDA an GPIO 33.
 - SD-Karte (SPI): CS=12, SCK=14, MOSI=27, MISO=26; gemountet unter `/sd`.
 - Shutdown-Taster: GPIO 13 auf GND (Pull-up aktiv).
-- WiFi/MQTT: nutzt TLS-Verbindung zum Broker `janlieder.de` auf Port 8883.
+- WiFi/MQTT: Standard ohne TLS auf Port 1883; optional TLS auf 8883 per Config.
 
 ## Ablauf beim Start (`boot.py`)
 1) SD-Karte auf `/sd` einbinden (SPI-Pins siehe oben); weiterlaufen, falls keine Karte steckt.

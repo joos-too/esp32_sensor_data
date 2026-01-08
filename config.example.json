@@ -6,7 +6,8 @@
   },
   "mqtt": {
     "broker": "your.mqtt.broker",
-    "port": 8883,
+    "ssl": false,
+    "port": 1883,
     "user": "esp32",
     "password": "your-mqtt-password",
     "device_id": "ESP32-Sensor",

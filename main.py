@@ -259,15 +259,10 @@ async def sensor_loop(client, period_ms=2000):
                 log("MQTT disconnect failed:", e, level="ERROR", to_sd=False)
             return
 
-        # time management
-        now = time.ticks_ms()
-        next_read = time.ticks_add(now, period_ms)
-        if last_read:
-            log("delta_t =", time.ticks_diff(now, last_read))
-        last_read = now
-
         try:
             # sensor measurements every ~2s
+            now = time.ticks_ms()
+            next_read = time.ticks_add(now, period_ms)
             try:
                 dht22.measure()
                 temp = round(dht22.temperature(), 1)

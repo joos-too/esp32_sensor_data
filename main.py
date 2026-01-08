@@ -244,7 +244,7 @@ async def sensor_loop(client, period_ms=2000):
 
         # MQTT publish only on anomaly windows, otherwise keep history.
         if temp_anomaly or hum_anomaly:
-            log("Anomaly detected, publishing to MQTT...")
+            log("Publishing to MQTT...")
             payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
             payload["event"] = "anomaly"
             payload["window_before"] = list(measurement_history)
@@ -256,6 +256,8 @@ async def sensor_loop(client, period_ms=2000):
             payload["event"] = "anomaly_followup"
             await client.publish(TOPIC_TELE, ujson.dumps(payload))
             post_anomaly_remaining -= 1
+            if post_anomaly_remaining == 0:
+                log(f"Stop publishing to MQTT after {POST_ANOMALY_SEND_COUNT} followup messages.")
         else:
             measurement_entry = build_measurement_entry(ts_tuple, temp, hum)
             measurement_history.append(measurement_entry)

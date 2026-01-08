@@ -6,16 +6,20 @@ from resources import get_cpu_usage, get_full_memory_info
 import boot_globals as bg
 from detectors import create_detector
 from mqtt_as import MQTTClient, config
-from logger import log
+from logger import log, log_data
 
 # setup dht22 and oled Display
 dht22 = dht.DHT22(Pin(25, Pin.IN))
 i2c = SoftI2C(scl=Pin(32), sda=Pin(33))
 oled = ssd1306.SSD1306_I2C(128, 64, i2c)
 
+# sizing and positioning for anomaly marks on oled
+ANOMALY_MARK_SIZE = 6
+ANOMALY_MARK_PAD = 2
+ANOMALY_MARK_X = oled.width - ANOMALY_MARK_SIZE - ANOMALY_MARK_PAD
+
 # shutdown button
 shutdown_btn = Pin(13, Pin.IN, Pin.PULL_UP)
-shutdown_requested = False
 
 # anomaly detection config
 DETECTOR_KEYS = {
@@ -36,15 +40,8 @@ TOPIC_TELE = None
 TOPIC_STATUS = None
 
 
-def check_shutdown_button():
-    """Check if shutdown button is pressed."""
-    return shutdown_btn.value() == 0  # LOW when pressed
-
-
-def safe_shutdown():
-    """Flush, unmount SD, and optionally deep sleep."""
-    global shutdown_requested
-    shutdown_requested = True
+async def safe_shutdown(client):
+    """Unmount SD card, turn off oled screen and disconnect MQTT client."""
     log("Shutdown button pressed, preparing safe power-down")
 
     try:
@@ -57,50 +54,21 @@ def safe_shutdown():
     oled.fill(0)
     oled.show()
 
+    try:
+        await client.disconnect()
+    except Exception as e:
+        log("MQTT disconnect failed:", e, level="ERROR", to_sd=False)
+
     log("Device can now be powered off safely.", to_sd=False)
 
 
-# sd logger
-def log_to_sd(ts, temp, hum, cpu, mem, anomalies):
-    """
-    Logs a single measurement to daily CSV file on SD card.
-    Creates a new file each day with header row if it doesn't exist.
-    """
-    if "sd" not in os.listdir("/"):
-        log("No SD filesystem mounted.", to_sd=False)
-        return
-
-    try:
-        # current date for filename
-        date_str = "{:04d}-{:02d}-{:02d}".format(*time.localtime())
-        filename = f"telemetry_{date_str}.csv"
-        filepath = "/sd/" + filename
-
-        # header if file is new
-        if filename not in os.listdir("/sd"):
-            with open(filepath, "w") as f:
-                f.write(
-                    "ts,temp,hum,mp_cpu,cpu_total,cpu_core0,cpu_core1,mp_used_kb,mp_free_kb,mp_total_kb,idf_used_kb,idf_free_kb,idf_total_kb,temp_zscore_anomaly,temp_ewma_anomaly,temp_adaptive_threshold_anomaly,hum_zscore_anomaly,hum_ewma_anomaly,hum_adaptive_threshold_anomaly\n")
-
-        # timestamp line
-        idf_used_kb = mem["idf_total_kb"] - mem["idf_free_kb"]
-        line = f"{ts},{temp:.1f},{hum:.1f},{cpu['mp_task']:.1f},{cpu['total']:.1f},{cpu['core0']:.1f},{cpu['core1']:.1f},{mem['mp_used_kb']},{mem['mp_free_kb']},{mem['mp_total_kb']},{idf_used_kb},{mem['idf_free_kb']},{mem['idf_total_kb']},{anomalies['temp_zscore_anomaly']},{anomalies['temp_ewma_anomaly']},{anomalies['temp_adaptive_threshold_anomaly']},{anomalies['hum_zscore_anomaly']},{anomalies['hum_ewma_anomaly']},{anomalies['hum_adaptive_threshold_anomaly']}"
-
-        # append new row
-        with open(filepath, "a") as f:
-            f.write(line + "\n")
-
-    except Exception as e:
-        log("SD write error: {}".format(e), level="ERROR", to_sd=False)
-
-
 def load_detector_settings():
-    cfg = getattr(bg, "CONFIG", {}) or {}
-    det_cfg = cfg.get("detector", {})
+    cfg = getattr(bg, "CONFIG")
+    det_cfg = cfg.get("detector")
 
     # get detector type and params from config
-    det_type = det_cfg.get("type", None)
-    det_params = det_cfg.get(det_type, {}) or {}
+    det_type = det_cfg.get("type")
+    det_params = det_cfg.get(det_type)
 
     return det_type, det_params
 
@@ -178,37 +146,12 @@ def setup_mqtt_config():
     config["ssid"] = wifi_cfg.get("ssid")
     config["wifi_pw"] = wifi_cfg.get("password")
     config["server"] = MQTT_BROKER
-    mqtt_ssl = mqtt_cfg.get("ssl", False)
-    if isinstance(mqtt_ssl, str):
-        mqtt_ssl = mqtt_ssl.strip().lower() in ("1", "true", "yes", "on")
-    mqtt_ssl = bool(mqtt_ssl)
-    config["ssl"] = mqtt_ssl
-    if mqtt_ssl:
-        config["ssl_params"] = {
-            "server_hostname": MQTT_BROKER,
-            "cert_reqs": ssl.CERT_NONE,
-        }
-    else:
-        config["ssl_params"] = {}
-
-    default_port = 8883 if mqtt_ssl else 1883
-    mqtt_port = mqtt_cfg.get("port", default_port)
-    try:
-        config["port"] = int(mqtt_port)
-    except (TypeError, ValueError):
-        config["port"] = default_port
+    config["ssl"] = False
+    config["port"] = 1883
     config["user"] = mqtt_cfg.get("user", "esp32")
     config["password"] = mqtt_cfg.get("password") or ""
-
-    client_id = b"esp32-" + ubinascii.hexlify(machine.unique_id())
-    config["client_id"] = client_id
-
-    mqtt_keepalive = mqtt_cfg.get("keepalive", 60)
-    try:
-        config["keepalive"] = int(mqtt_keepalive)
-    except (TypeError, ValueError):
-        config["keepalive"] = 60
-
+    config["client_id"] = b"esp32-" + ubinascii.hexlify(machine.unique_id())
+    config["keepalive"] = 60
     config["will"] = (
         TOPIC_STATUS,
         ujson.dumps({"device_id": DEVICE_ID, "status": "offline"}),
@@ -247,20 +190,18 @@ async def sensor_loop(client, period_ms=2000):
     measurement_history = deque((), MEASUREMENTS_PER_WINDOW)
     post_anomaly_remaining = 0
 
+    # sensor measurements every period_ms
+    now = time.ticks_ms()
+    next_read = time.ticks_add(now, period_ms)
+
     detector_type, temp_det, hum_det = init_detectors()
 
     while True:
-        if check_shutdown_button():
-            safe_shutdown()
-            try:
-                await client.disconnect()
-            except Exception as e:
-                log("MQTT disconnect failed:", e, level="ERROR", to_sd=False)
+        # shutdown button pressed
+        if shutdown_btn.value() == 0:
+            await safe_shutdown(client)
             return
 
-        # sensor measurements every ~2s
-        now = time.ticks_ms()
-        next_read = time.ticks_add(now, period_ms)
         try:
             dht22.measure()
             temp = round(dht22.temperature(), 1)
@@ -278,7 +219,7 @@ async def sensor_loop(client, period_ms=2000):
             temp_anomaly = False
             hum_anomaly = False
         else:
-            # anomaly detection (temperature)
+            # anomaly detection
             temp_anomaly = temp_det.update(temp)
             hum_anomaly = hum_det.update(hum)
         anomalies = build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly)
@@ -292,6 +233,10 @@ async def sensor_loop(client, period_ms=2000):
         oled.fill(0)
         oled.text(f"Temp: {temp:.1f}C", 0, 0)
         oled.text(f"Hum:  {hum:.1f}%", 0, 10)
+        if temp_anomaly:
+            oled.fill_rect(ANOMALY_MARK_X, 0, ANOMALY_MARK_SIZE, ANOMALY_MARK_SIZE, 1)
+        if hum_anomaly:
+            oled.fill_rect(ANOMALY_MARK_X, 10, ANOMALY_MARK_SIZE, ANOMALY_MARK_SIZE, 1)
         oled.text("MP Resources", 0, 30)
         oled.text(f"CPU: {cpu['mp_task']:.1f}%", 0, 40)
         oled.text(f"RAM: {mem['mp_used_kb']}/{mem['mp_total_kb']}KB", 0, 50)
@@ -315,8 +260,8 @@ async def sensor_loop(client, period_ms=2000):
             measurement_entry = build_measurement_entry(ts_tuple, temp, hum)
             measurement_history.append(measurement_entry)
 
-        # sd card log
-        log_to_sd(ts, temp, hum, cpu, mem, anomalies)
+        # sd card data log
+        log_data(ts, temp, hum, cpu, mem, anomalies)
 
         # debugging logs
         log(
@@ -329,7 +274,7 @@ async def sensor_loop(client, period_ms=2000):
             await asyncio.sleep_ms(remaining)
             next_read = time.ticks_add(next_read, period_ms)
         else:
-            # Overran the period; reschedule from now to avoid drift.
+            # Overran the period; reschedule from now.
             next_read = time.ticks_add(now, period_ms)
 
 

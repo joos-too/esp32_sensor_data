@@ -1,9 +1,7 @@
 from collections import deque
 import math
 
-# =======================================
 # Z-Score Detector (gleitendes Fenster)
-# =======================================
 class ZScoreDetector:
     def __init__(self, window_size=10, threshold=3.0):
         self.window = deque((), window_size)
@@ -22,9 +20,7 @@ class ZScoreDetector:
         return z > self.threshold
 
 
-# =======================================
 # EWMA-Detector (Exponentially Weighted Moving Average)
-# =======================================
 class EWMADetector:
     def __init__(self, alpha=0.2, threshold=3.0, min_samples=5):
         self.alpha = alpha
@@ -52,10 +48,7 @@ class EWMADetector:
         return abs(diff) > self.threshold * std if std > 0 else False
 
 
-# =======================================
-# Adaptive Schwellenlogik
-# (gleitendes Mittel mit Faktor für Abweichung)
-# =======================================
+# Adaptive Schwellenlogik (gleitendes Mittel mit Faktor für Abweichung)
 class AdaptiveThresholdDetector:
     def __init__(self, window_size=20, sensitivity=1.5):
         self.window = deque((), window_size)
@@ -74,9 +67,7 @@ class AdaptiveThresholdDetector:
         return value > upper or value < lower
 
 
-# =======================================
 # Factory
-# =======================================
 DETECTOR_REGISTER = {
     "zscore": ZScoreDetector,
     "ewma": EWMADetector,

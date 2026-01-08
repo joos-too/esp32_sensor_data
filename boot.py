@@ -5,40 +5,26 @@ from machine import Pin, SDCard
 import boot_globals as bg
 from logger import log
 
-# =======================
-# ---- SD-CARD MOUNT ----
-# =======================
-MOUNT_POINT = "/sd"
-PINS = dict(sck=14, miso=26, mosi=27, cs=12)  # SPI pins
-
-
-def mount_sd():
+def mount_sd(pins, mount_point):
     """Mount SD card if present."""
     try:
         sd = SDCard(
             slot=2,  # SPI mode
-            sck=Pin(PINS["sck"]),
-            mosi=Pin(PINS["mosi"]),
-            miso=Pin(PINS["miso"]),
-            cs=Pin(PINS["cs"]),
+            sck=Pin(pins["sck"]),
+            mosi=Pin(pins["mosi"]),
+            miso=Pin(pins["miso"]),
+            cs=Pin(pins["cs"]),
             freq=4_000_000,
         )
-        os.mount(sd, MOUNT_POINT)
-        log(f"SD card mounted at {MOUNT_POINT}")
-        log("Contents:", os.listdir(MOUNT_POINT))
+        os.mount(sd, mount_point)
+        log(f"SD card mounted at {mount_point}")
+        log("Contents:", os.listdir(mount_point))
         return sd
     except OSError as e:
         log(
             f"SD card not mounted ({e})  — continuing without SD", level="ERROR")
         return None
 
-
-mount_sd()
-
-
-# =======================
-# ---- CONFIG LOAD  -----
-# =======================
 def load_config():
     """
     Load configuration from JSON file.
@@ -65,29 +51,26 @@ def load_config():
     log("No config file found", level="ERROR")
     return {}
 
+def wifi_init(hostname):
+    """Initialize WiFi (station mode) and set hostname."""
+    try:
+        w = network.WLAN(network.STA_IF)
+        w.active(True)
+        w.config(dhcp_hostname=hostname)
+        return w
+    except Exception as e:
+        log("WiFi init failed:", e, level="ERROR")
+
+# Setup
+PINS = dict(sck=14, miso=26, mosi=27, cs=12)  # SPI pins
+MOUNT_POINT = "/sd"
+mount_sd(PINS, MOUNT_POINT)
 
 CONFIG = load_config()
-
-# =======================
-# ---- WIFI SETUP -------
-# =======================
 wifi_cfg = CONFIG.get("wifi")
 WIFI_HOSTNAME = wifi_cfg.get("hostname", "ESP32-Sensor")
+wifi = wifi_init(WIFI_HOSTNAME)
 
-
-def wifi_init():
-    w = network.WLAN(network.STA_IF)
-    w.active(True)
-    try:
-        w.config(dhcp_hostname=WIFI_HOSTNAME)
-    except Exception as e:
-        log("WiFi hostname set failed:", e, level="ERROR")
-    return w
-
-wifi = wifi_init()
-
-# =======================
-# ---- EXPORT GLOBALS ---
-# =======================
+# Export globals for use in main.py
 bg.wifi = wifi
 bg.CONFIG = CONFIG

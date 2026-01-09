@@ -1,5 +1,5 @@
 from machine import Pin, SoftI2C
-import time, ujson, os, ssl, asyncio, ntptime, ubinascii, machine
+import time, ujson, os, gc, asyncio, ntptime, ubinascii, machine
 from collections import deque
 import dht, ssd1306
 from resources import get_cpu_usage, get_full_memory_info
@@ -120,7 +120,6 @@ def sync_time():
 
 
 async def on_mqtt_connect(client):
-    sync_time()
     online = ujson.dumps({"device_id": DEVICE_ID, "status": "online"})
     await client.publish(TOPIC_STATUS, online, retain=True)
     if MQTT_BROKER:
@@ -158,6 +157,7 @@ def setup_mqtt_config():
         True,
         0,
     )
+    config["connect_coro"] = on_mqtt_connect
 
 
 async def connect_with_backoff(client):
@@ -251,6 +251,7 @@ async def sensor_loop(client, period_ms=2000):
             measurement_history = deque((), MEASUREMENTS_PER_WINDOW)  # clear history
             await client.publish(TOPIC_TELE, ujson.dumps(payload))
             post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
+            gc.collect() # trigger garbage collector
         elif post_anomaly_remaining > 0:
             payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
             payload["event"] = "anomaly_followup"
@@ -289,7 +290,7 @@ async def main():
         log("MQTT client init failed:", e, level="ERROR")
         return
     await connect_with_backoff(client)
-    await on_mqtt_connect(client)
+    sync_time()
     await sensor_loop(client)
 
 

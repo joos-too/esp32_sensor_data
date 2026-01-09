@@ -3,7 +3,7 @@ import time, ujson, os, asyncio, ntptime, ubinascii, machine
 from collections import deque
 import dht, ssd1306
 from resources import get_cpu_usage, get_full_memory_info
-from src import boot_globals as bg
+import boot_globals as bg
 from detectors import create_detector
 from mqtt_as import MQTTClient, config
 from logger import log, log_data
@@ -13,7 +13,10 @@ dht22 = dht.DHT22(Pin(25, Pin.IN))
 i2c = SoftI2C(scl=Pin(32), sda=Pin(33))
 oled = ssd1306.SSD1306_I2C(128, 64, i2c)
 
-# sizing and positioning for anomaly marks on oled
+# sizing and positioning for text and anomaly marks on oled
+OLED_LINE_HEIGHT = 10
+OLED_CHARS_PER_LINE = oled.width // 8
+
 ANOMALY_MARK_SIZE = 6
 ANOMALY_MARK_PAD = 2
 ANOMALY_MARK_X = oled.width - ANOMALY_MARK_SIZE - ANOMALY_MARK_PAD
@@ -60,6 +63,50 @@ async def safe_shutdown(client):
         log("MQTT disconnect failed:", e, level="ERROR", to_sd=False)
 
     log("Device can now be powered off safely.", to_sd=False)
+
+
+def _wrap_text(text, width):
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        if not current:
+            current = word
+        elif len(current) + 1 + len(word) <= width:
+            current = "{} {}".format(current, word)
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def show_startup_screen(current_index):
+    steps = ["Connect MQTT", "Sync Time", "Start Sensor"]
+
+    oled.fill(0)
+    oled.text("Startup:", 0, 0)
+    max_lines = max((oled.height // OLED_LINE_HEIGHT) - 1, 0)
+    y = OLED_LINE_HEIGHT
+    for i, step in enumerate(steps):
+        if y >= oled.height:
+            break
+        if i == current_index:
+            prefix = ">"
+        else:
+            prefix = " "
+        step_lines = _wrap_text(step, max(OLED_CHARS_PER_LINE - 2, 1))
+        for line_index, line in enumerate(step_lines):
+            if y >= oled.height or (y // OLED_LINE_HEIGHT) > max_lines:
+                break
+            if line_index == 0:
+                text = "{} {}".format(prefix, line)
+            else:
+                text = "  {}".format(line)
+            oled.text(text, 0, y)
+            y += OLED_LINE_HEIGHT
+    oled.show()
 
 
 def load_detector_settings():
@@ -288,8 +335,11 @@ async def main():
     except Exception as e:
         log("MQTT client init failed:", e, level="ERROR")
         return
+    show_startup_screen(0)
     await connect_with_backoff(client)
+    show_startup_screen(1)
     sync_time()
+    show_startup_screen(2)
     await sensor_loop(client)
 
 

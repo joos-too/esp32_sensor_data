@@ -251,7 +251,6 @@ async def sensor_loop(client, period_ms=2000):
             measurement_history = deque((), MEASUREMENTS_PER_WINDOW)  # clear history
             await client.publish(TOPIC_TELE, ujson.dumps(payload))
             post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
-            gc.collect() # trigger garbage collector
         elif post_anomaly_remaining > 0:
             payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
             payload["event"] = "anomaly_followup"

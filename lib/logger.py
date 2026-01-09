@@ -3,7 +3,7 @@ import os
 import time
 
 # central flag for activating debugging console logs
-DEBUG = True
+DEBUG = False
 
 def _sd_available():
     try:

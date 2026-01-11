@@ -6,24 +6,19 @@ import boot_globals as bg
 from logger import log
 
 def mount_sd(pins, mount_point):
-    """Mount SD card if present."""
-    try:
-        sd = SDCard(
-            slot=2,  # SPI mode
-            sck=Pin(pins["sck"]),
-            mosi=Pin(pins["mosi"]),
-            miso=Pin(pins["miso"]),
-            cs=Pin(pins["cs"]),
-            freq=4_000_000,
-        )
-        os.mount(sd, mount_point)
-        log(f"SD card mounted at {mount_point}")
-        log("Contents:", os.listdir(mount_point))
-        return sd
-    except OSError as e:
-        log(
-            f"SD card not mounted ({e})  — continuing without SD", level="ERROR")
-        return None
+    """Mount SD card."""
+    sd = SDCard(
+        slot=2,  # SPI mode
+        sck=Pin(pins["sck"]),
+        mosi=Pin(pins["mosi"]),
+        miso=Pin(pins["miso"]),
+        cs=Pin(pins["cs"]),
+        freq=4_000_000,
+    )
+    os.mount(sd, mount_point)
+    log(f"SD card mounted at {mount_point}")
+    log("Contents:", os.listdir(mount_point))
+    return sd
 
 def load_config():
     """

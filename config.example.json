@@ -22,10 +22,6 @@
       "threshold": 3,
       "min_samples": 5
     },
-    "adaptive_threshold": {
-      "window_size": 90,
-      "sensitivity": 2
-    },
     "rulebased": {
       "temp": {
         "upper": 25,

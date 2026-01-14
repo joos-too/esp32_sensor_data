@@ -47,25 +47,6 @@ class EWMADetector:
             return False
         return abs(diff) > self.threshold * std if std > 0 else False
 
-
-# Adaptive Schwellenlogik (gleitendes Mittel mit Faktor für Abweichung)
-class AdaptiveThresholdDetector:
-    def __init__(self, window_size=20, sensitivity=1.5):
-        self.window = deque((), window_size)
-        self.window_size = window_size
-        self.sensitivity = sensitivity
-
-    def update(self, value):
-        if len(self.window) < self.window_size:
-            self.window.append(value)
-            return False
-        mean = sum(self.window) / len(self.window)
-        max_dev = max(abs(x - mean) for x in self.window)
-        upper = mean + self.sensitivity * max_dev
-        lower = mean - self.sensitivity * max_dev
-        self.window.append(value)
-        return value > upper or value < lower
-
 # Einfache regelbasierte Logik
 class RuleBasedDetector:
     def __init__(self, upper, lower):
@@ -79,7 +60,6 @@ class RuleBasedDetector:
 DETECTOR_REGISTER = {
     "zscore": ZScoreDetector,
     "ewma": EWMADetector,
-    "adaptive_threshold": AdaptiveThresholdDetector,
     "rulebased": RuleBasedDetector
 }
 

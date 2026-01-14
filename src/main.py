@@ -28,7 +28,6 @@ shutdown_btn = Pin(13, Pin.IN, Pin.PULL_UP)
 DETECTOR_KEYS = {
     "zscore": ("temp_zscore_anomaly", "hum_zscore_anomaly"),
     "ewma": ("temp_ewma_anomaly", "hum_ewma_anomaly"),
-    "adaptive_threshold": ("temp_adaptive_threshold_anomaly", "hum_adaptive_threshold_anomaly"),
     "rulebased": ("temp_rulebased_anomaly", "hum_rulebased_anomaly"),
 }
 
@@ -136,11 +135,9 @@ def build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly):
     anomalies = {
         "temp_zscore_anomaly": False,
         "temp_ewma_anomaly": False,
-        "temp_adaptive_threshold_anomaly": False,
         "temp_rulebased_anomaly": False,
         "hum_zscore_anomaly": False,
         "hum_ewma_anomaly": False,
-        "hum_adaptive_threshold_anomaly": False,
         "hum_rulebased_anomaly": False,
     }
     keys = DETECTOR_KEYS.get(detector_type)

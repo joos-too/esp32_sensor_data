@@ -29,6 +29,7 @@ DETECTOR_KEYS = {
     "zscore": ("temp_zscore_anomaly", "hum_zscore_anomaly"),
     "ewma": ("temp_ewma_anomaly", "hum_ewma_anomaly"),
     "adaptive_threshold": ("temp_adaptive_threshold_anomaly", "hum_adaptive_threshold_anomaly"),
+    "rulebased": ("temp_rulebased_anomaly", "hum_rulebased_anomaly"),
 }
 
 MEASUREMENTS_PER_WINDOW = 15
@@ -109,15 +110,26 @@ def show_startup_screen(current_index):
     oled.show()
 
 
+def _split_detector_params(det_params):
+    if not isinstance(det_params, dict):
+        return {}, {}
+    temp_params = det_params.get("temp")
+    hum_params = det_params.get("hum")
+    if temp_params is None and hum_params is None:
+        return det_params, det_params
+    return temp_params or {}, hum_params or {}
+
+
 def load_detector_settings():
-    cfg = getattr(bg, "CONFIG")
-    det_cfg = cfg.get("detector")
+    cfg = getattr(bg, "CONFIG", {}) or {}
+    det_cfg = cfg.get("detector") or {}
 
     # get detector type and params from config
     det_type = det_cfg.get("type")
-    det_params = det_cfg.get(det_type)
+    det_params = det_cfg.get(det_type) or {}
+    temp_params, hum_params = _split_detector_params(det_params)
 
-    return det_type, det_params
+    return det_type, temp_params, hum_params
 
 
 def build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly):
@@ -125,9 +137,11 @@ def build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly):
         "temp_zscore_anomaly": False,
         "temp_ewma_anomaly": False,
         "temp_adaptive_threshold_anomaly": False,
+        "temp_rulebased_anomaly": False,
         "hum_zscore_anomaly": False,
         "hum_ewma_anomaly": False,
         "hum_adaptive_threshold_anomaly": False,
+        "hum_rulebased_anomaly": False,
     }
     keys = DETECTOR_KEYS.get(detector_type)
     if keys:
@@ -220,16 +234,17 @@ async def connect_with_backoff(client):
 
 
 def init_detectors():
-    detector_type, detector_params = load_detector_settings()
+    detector_type, temp_params, hum_params = load_detector_settings()
     try:
-        temp_det = create_detector(detector_type, **detector_params)
-        hum_det = create_detector(detector_type, **detector_params)
+        temp_det = create_detector(detector_type, **temp_params)
+        hum_det = create_detector(detector_type, **hum_params)
     except Exception as e:
         log("Detector init failed: {}".format(e), level="ERROR")
         temp_det = None
         hum_det = None
     log("Active detector:", detector_type)
-    log("Detector params:", detector_params)
+    log("Detector params (temp):", temp_params)
+    log("Detector params (hum):", hum_params)
     return detector_type, temp_det, hum_det
 
 

@@ -25,6 +25,16 @@
     "adaptive_threshold": {
       "window_size": 90,
       "sensitivity": 2
+    },
+    "rulebased": {
+      "temp": {
+        "upper": 25,
+        "lower": 16
+      },
+      "hum": {
+        "upper": 60,
+        "lower": 40
+      }
     }
   }
 }

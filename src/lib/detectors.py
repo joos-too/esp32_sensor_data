@@ -66,12 +66,21 @@ class AdaptiveThresholdDetector:
         self.window.append(value)
         return value > upper or value < lower
 
+# Einfache regelbasierte Logik
+class RuleBasedDetector:
+    def __init__(self, upper, lower):
+        self.upper = upper
+        self.lower = lower
+
+    def update(self, value):
+        return value > self.upper or value < self.lower
 
 # Factory
 DETECTOR_REGISTER = {
     "zscore": ZScoreDetector,
     "ewma": EWMADetector,
     "adaptive_threshold": AdaptiveThresholdDetector,
+    "rulebased": RuleBasedDetector
 }
 
 

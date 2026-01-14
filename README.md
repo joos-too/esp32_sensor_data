@@ -31,7 +31,7 @@ Kompakte Wetterstation auf dem ESP32 mit MicroPython: liest einen DHT22 aus, erk
 - `src/boot.py`: SD-Mount, Config-Load, WLAN-Hostname, MQTT-IDs/Topics.
 - `src/main.py`: Sensorauslese, Anzeige, MQTT-Publish via `mqtt_as`, SD-Logging, Shutdown-Handling.
 - `src/lib/resources.py`: Helfer für CPU-/Speicherstatistiken (benötigt Custom-Firmware).
-- `src/lib/detectors.py`: Implementierung von Anomalieerkennungsverfahren (Z-Score, EWMA, Adaptive Treshholding)
+- `src/lib/detectors.py`: Implementierung von Anomalieerkennungsverfahren (Z-Score, EWMA, Adaptive Treshholding, Rule-Based)
 - `src/lib/logger.py`: Zentraler Logger für Konsolen und SD-Logging.
 - `src/lib/sdd1306.py`: SSD1306-Treiber (externe Bibliothek).
 - `src/lib/mqtt_as`: MQTT-Client (externe Bibliothek).

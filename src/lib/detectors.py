@@ -1,7 +1,7 @@
 from collections import deque
 import math
 
-# Z-Score Detector (gleitendes Fenster)
+# Z-Score detector (sliding window)
 class ZScoreDetector:
     def __init__(self, window_size=10, threshold=3.0):
         self.window = deque((), window_size)
@@ -11,12 +11,12 @@ class ZScoreDetector:
     def update(self, value):
         if len(self.window) < self.window_size:
             self.window.append(value)
-            return False  # Noch nicht genug Daten
+            return False  # not enough data yet
         mean = sum(self.window) / len(self.window)
         std = math.sqrt(sum((x - mean) ** 2 for x in self.window) / len(self.window))
         z = abs((value - mean) / std) if std > 0 else 0
 
-        self.window.append(value)
+        self.window.append(value) # append afterwards to avoid skewing mean and std
         return z > self.threshold
 
 
@@ -47,7 +47,7 @@ class EWMADetector:
             return False
         return abs(diff) > self.threshold * std if std > 0 else False
 
-# Einfache regelbasierte Logik
+# Simple rule-based detector
 class RuleBasedDetector:
     def __init__(self, upper, lower):
         self.upper = upper

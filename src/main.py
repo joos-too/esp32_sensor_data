@@ -237,11 +237,6 @@ async def sensor_loop(client, period_ms=2000):
         oled.show()
 
         # MQTT publish
-        payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
-        payload["event"] = "anomaly_followup"
-        await client.publish(TOPIC_TELE, ujson.dumps(payload))
-
-        # sd card data log
         anomalies = {
             "temp_zscore_anomaly": False,
             "temp_ewma_anomaly": False,
@@ -250,6 +245,11 @@ async def sensor_loop(client, period_ms=2000):
             "hum_ewma_anomaly": False,
             "hum_rulebased_anomaly": False,
         }
+        payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
+        payload["event"] = "anomaly_followup"
+        await client.publish(TOPIC_TELE, ujson.dumps(payload))
+
+        # sd card data log
         log_data(ts, temp, hum, cpu, mem, anomalies)
 
         # debugging logs

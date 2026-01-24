@@ -17,22 +17,8 @@ oled = ssd1306.SSD1306_I2C(128, 64, i2c)
 OLED_LINE_HEIGHT = 10
 OLED_CHARS_PER_LINE = oled.width // 8
 
-ANOMALY_MARK_SIZE = 6
-ANOMALY_MARK_PAD = 2
-ANOMALY_MARK_X = oled.width - ANOMALY_MARK_SIZE - ANOMALY_MARK_PAD
-
 # shutdown button
 shutdown_btn = Pin(13, Pin.IN, Pin.PULL_UP)
-
-# anomaly detection config
-DETECTOR_KEYS = {
-    "zscore": ("temp_zscore_anomaly", "hum_zscore_anomaly"),
-    "ewma": ("temp_ewma_anomaly", "hum_ewma_anomaly"),
-    "rulebased": ("temp_rulebased_anomaly", "hum_rulebased_anomaly"),
-}
-
-MEASUREMENTS_PER_WINDOW = 15
-POST_ANOMALY_SEND_COUNT = 15
 
 # MQTT Config
 MQTT_BROKER = None
@@ -109,64 +95,6 @@ def show_startup_screen(current_index):
     oled.show()
 
 
-def _split_detector_params(det_params):
-    if not isinstance(det_params, dict):
-        return {}, {}
-    temp_params = det_params.get("temp")
-    hum_params = det_params.get("hum")
-    if temp_params is None and hum_params is None:
-        return det_params, det_params
-    return temp_params or {}, hum_params or {}
-
-
-def load_detector_settings():
-    cfg = getattr(bg, "CONFIG", {}) or {}
-    det_cfg = cfg.get("detector") or {}
-
-    # get detector type and params from config
-    det_type = det_cfg.get("type")
-    det_params = det_cfg.get(det_type) or {}
-    temp_params, hum_params = _split_detector_params(det_params)
-
-    return det_type, temp_params, hum_params
-
-
-def build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly):
-    anomalies = {
-        "temp_zscore_anomaly": False,
-        "temp_ewma_anomaly": False,
-        "temp_rulebased_anomaly": False,
-        "hum_zscore_anomaly": False,
-        "hum_ewma_anomaly": False,
-        "hum_rulebased_anomaly": False,
-    }
-    keys = DETECTOR_KEYS.get(detector_type)
-    if keys:
-        anomalies[keys[0]] = temp_anomaly
-        anomalies[keys[1]] = hum_anomaly
-    return anomalies
-
-
-def build_measurement_entry(ts_tuple, temp, hum):
-    entry = {
-        "ts": ts_tuple,
-        "temp_c": temp,
-        "hum_pct": hum,
-    }
-    return entry
-
-
-def build_measurement_payload(ts_tuple, temp, hum, anomalies):
-    payload = {
-        "device_id": DEVICE_ID,
-        "ts": ts_tuple,
-        "temp_c": temp,
-        "hum_pct": hum,
-    }
-    payload.update(anomalies)
-    return payload
-
-
 def sync_time():
     log("Syncing time via NTP...")
     try:
@@ -230,30 +158,11 @@ async def connect_with_backoff(client):
             backoff_s = min(backoff_s * 2, 30)
 
 
-def init_detectors():
-    detector_type, temp_params, hum_params = load_detector_settings()
-    try:
-        temp_det = create_detector(detector_type, **temp_params)
-        hum_det = create_detector(detector_type, **hum_params)
-    except Exception as e:
-        log("Detector init failed: {}".format(e), level="ERROR")
-        temp_det = None
-        hum_det = None
-    log("Active detector:", detector_type)
-    log("Detector params (temp):", temp_params)
-    log("Detector params (hum):", hum_params)
-    return detector_type, temp_det, hum_det
-
-
 async def sensor_loop(client, period_ms=2000):
-    measurement_history = deque((), MEASUREMENTS_PER_WINDOW)
-    post_anomaly_remaining = 0
 
     # sensor measurements every period_ms
     now = time.ticks_ms()
     next_read = time.ticks_add(now, period_ms)
-
-    detector_type, temp_det, hum_det = init_detectors()
 
     while True:
         # shutdown button pressed
@@ -274,52 +183,23 @@ async def sensor_loop(client, period_ms=2000):
         cpu = get_cpu_usage()
         mem = get_full_memory_info()
 
-        if temp_det is None or hum_det is None:
-            temp_anomaly = False
-            hum_anomaly = False
-        else:
-            # anomaly detection
-            temp_anomaly = temp_det.update(temp)
-            hum_anomaly = hum_det.update(hum)
-        anomalies = build_anomaly_dict(detector_type, temp_anomaly, hum_anomaly)
-
-        if temp_anomaly:
-            log("Anomaly detected: temp_{} temp={:.1f}C ts={}".format(detector_type, temp, ts))
-        if hum_anomaly:
-            log("Anomaly detected: hum_{} hum={:.1f}% ts={}".format(detector_type, hum, ts))
+        anomalies = {
+            "temp_zscore_anomaly": False,
+            "temp_ewma_anomaly": False,
+            "temp_rulebased_anomaly": False,
+            "hum_zscore_anomaly": False,
+            "hum_ewma_anomaly": False,
+            "hum_rulebased_anomaly": False,
+        }
 
         # oled
         oled.fill(0)
         oled.text(f"Temp: {temp:.1f}C", 0, 0)
         oled.text(f"Hum:  {hum:.1f}%", 0, 10)
-        if temp_anomaly:
-            oled.fill_rect(ANOMALY_MARK_X, 0, ANOMALY_MARK_SIZE, ANOMALY_MARK_SIZE, 1)
-        if hum_anomaly:
-            oled.fill_rect(ANOMALY_MARK_X, 10, ANOMALY_MARK_SIZE, ANOMALY_MARK_SIZE, 1)
         oled.text("MP Resources", 0, 30)
         oled.text(f"CPU: {cpu['mp_task']:.1f}%", 0, 40)
         oled.text(f"RAM: {mem['mp_used_kb']}/{mem['mp_total_kb']}KB", 0, 50)
         oled.show()
-
-        # MQTT publish only on anomaly windows, otherwise keep history.
-        if temp_anomaly or hum_anomaly:
-            log("Publishing to MQTT...")
-            payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
-            payload["event"] = "anomaly"
-            payload["window_before"] = list(measurement_history)
-            measurement_history = deque((), MEASUREMENTS_PER_WINDOW)  # clear history
-            await client.publish(TOPIC_TELE, ujson.dumps(payload))
-            post_anomaly_remaining = POST_ANOMALY_SEND_COUNT
-        elif post_anomaly_remaining > 0:
-            payload = build_measurement_payload(ts_tuple, temp, hum, anomalies)
-            payload["event"] = "anomaly_followup"
-            await client.publish(TOPIC_TELE, ujson.dumps(payload))
-            post_anomaly_remaining -= 1
-            if post_anomaly_remaining == 0:
-                log(f"Stop publishing to MQTT after {POST_ANOMALY_SEND_COUNT} followup messages.")
-        else:
-            measurement_entry = build_measurement_entry(ts_tuple, temp, hum)
-            measurement_history.append(measurement_entry)
 
         # sd card data log
         log_data(ts, temp, hum, cpu, mem, anomalies)

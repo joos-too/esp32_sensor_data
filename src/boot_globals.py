@@ -1,2 +1,0 @@
-wifi = None
-CONFIG = {}

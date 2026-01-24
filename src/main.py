@@ -30,18 +30,6 @@ async def safe_shutdown():
     log("Device can now be powered off safely.", to_sd=False)
 
 
-def sync_time():
-    log("Syncing time via NTP...")
-    try:
-        ntptime.host = "pool.ntp.org"
-        ntptime.settime()  # sets RTC to UTC
-        log("Time synced")
-    except Exception as e:
-        log("NTP sync failed:", e, level="ERROR")
-
-
-
-
 async def sensor_loop(period_ms=2000):
     # sensor measurements every period_ms
     now = time.ticks_ms()
@@ -76,7 +64,14 @@ async def sensor_loop(period_ms=2000):
         oled.show()
 
         # sd card data log
-        log_data(ts, temp, hum, cpu, mem)
+        log_data(ts, temp, hum, cpu, mem, anomalies={
+            "temp_zscore_anomaly": False,
+            "temp_ewma_anomaly": False,
+            "temp_rulebased_anomaly": False,
+            "hum_zscore_anomaly": False,
+            "hum_ewma_anomaly": False,
+            "hum_rulebased_anomaly": False
+        })
 
         # debugging logs
         log(
@@ -95,7 +90,6 @@ async def sensor_loop(period_ms=2000):
 
 async def main():
     log("Starting main programm")
-    sync_time()
     await sensor_loop()
 
 

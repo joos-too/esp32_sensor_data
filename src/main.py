@@ -1,10 +1,8 @@
 from machine import Pin, SoftI2C
 import time, ujson, os, asyncio, ntptime, ubinascii, machine
-from collections import deque
 import dht, ssd1306
 from resources import get_cpu_usage, get_full_memory_info
 import boot_globals as bg
-from detectors import create_detector
 from mqtt_as import MQTTClient, config
 from logger import log, log_data
 

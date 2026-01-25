@@ -3,7 +3,7 @@ import math
 
 # Z-Score detector (sliding window)
 class ZScoreDetector:
-    def __init__(self, window_size=10, threshold=3.0, min_std=0.1):
+    def __init__(self, window_size=10, threshold=3.0, min_std=0):
         self.window = deque((), window_size)
         self.window_size = window_size
         self.threshold = threshold
@@ -24,7 +24,7 @@ class ZScoreDetector:
 
 # EWMA-Detector (Exponentially Weighted Moving Average)
 class EWMADetector:
-    def __init__(self, alpha=0.2, threshold=3.0, min_samples=5, min_std=0.1):
+    def __init__(self, alpha=0.2, threshold=3.0, min_samples=5, min_std=0):
         self.alpha = alpha
         self.threshold = threshold
         self.min_samples = max(0, int(min_samples))

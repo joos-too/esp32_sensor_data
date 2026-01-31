@@ -1,6 +1,6 @@
 # ESP32 Sensor Projekt
 
-Kompakte Wetterstation auf dem ESP32 mit MicroPython: liest einen DHT22 aus, erkennt Anomalien, zeigt Werte auf einem SSD1306-OLED, schickt Anomaliefenster per MQTT und loggt parallel auf SD-Karte. Für CPU- und RAM-Infos wird eine MicroPython-Firmware mit `esp32.idf_task_info` benötigt (siehe [MicroPython Doku](https://docs.micropython.org/en/latest/library/esp32.html#esp32.idf_task_info) und CustomFirmware.MD).
+Kompakte Wetterstation auf dem ESP32 mit MicroPython: liest einen DHT22 aus, erkennt Anomalien, zeigt Werte auf einem SSD1306-OLED, schickt Anomaliefenster per MQTT und loggt parallel auf SD-Karte. Für CPU-Infos wird eine MicroPython-Firmware mit `esp32.idf_task_info` benötigt (siehe [MicroPython Doku](https://docs.micropython.org/en/latest/library/esp32.html#esp32.idf_task_info) und CustomFirmware.MD).
 
 ## Hardware / Pinbelegung
 - DHT22: Daten an GPIO 25 (Pin als Eingang).

@@ -14,8 +14,8 @@
   "detector": {
     "type": "zscore",
     "zscore": {
-      "window_size": 90,
-      "threshold": 3
+      "window_size": 150,
+      "threshold": 2.5
     },
     "ewma": {
       "alpha": 0.1,
